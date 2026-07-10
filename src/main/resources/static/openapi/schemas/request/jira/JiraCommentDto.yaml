@@ -1,0 +1,23 @@
+type: object
+description: Corresponde a com.empresa.maestro.jira.model.JiraComment en jira-lib.
+properties:
+  id:
+    type: string
+    example: "20031"
+  author:
+    $ref: "./JiraUserDto.yaml"
+  body:
+    description: >
+      ADF (Jira Cloud, objeto) o texto plano (Server/DC, string). Se modela
+      sin "type" (cualquier valor JSON) porque un oneOf[string,object] sin
+      discriminador no es deserializable por Jackson en el generador Spring;
+      JiraTextExtractor.extractPlainText(Object) trata ambos casos. El
+      servicio busca aquí la palabra clave configurada en
+      maestro.jira.filter.trigger-keyword (por defecto "sixai") para decidir
+      si procesa la tarea.
+  created:
+    type: string
+    format: date-time
+  updated:
+    type: string
+    format: date-time

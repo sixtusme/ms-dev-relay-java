@@ -1,0 +1,21 @@
+type: object
+properties:
+  status:
+    type: integer
+    example: 500
+  error:
+    type: string
+    example: "INTERNAL_ERROR"
+  message:
+    type: string
+    example: "Ha ocurrido un error interno"
+  details:
+    type: string
+    example: "Detalles específicos del error"
+  path:
+    type: string
+    example: "/api/products/123"
+  timestamp:
+    type: string
+    format: date-time
+    example: "2025-01-15 14:30:45"

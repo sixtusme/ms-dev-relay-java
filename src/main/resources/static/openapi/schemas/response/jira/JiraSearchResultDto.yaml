@@ -1,0 +1,28 @@
+type: object
+description: >
+  Respuesta de búsqueda por JQL. Cubre los dos esquemas de paginación:
+  - Jira Cloud (POST /rest/api/3/search/jql): paginación por cursor
+    (nextPageToken / isLast); no devuelve total ni startAt.
+  - Jira Server/DC (GET /rest/api/2/search): paginación por offset
+    (startAt / total).
+properties:
+  expand:
+    type: string
+  startAt:
+    type: integer
+    description: Solo Jira Server/DC (paginación por offset).
+  maxResults:
+    type: integer
+  total:
+    type: integer
+    description: Solo Jira Server/DC (paginación por offset).
+  nextPageToken:
+    type: string
+    description: Solo Jira Cloud (paginación por cursor); ausente en la última página.
+  isLast:
+    type: boolean
+    description: Solo Jira Cloud; true en la última página.
+  issues:
+    type: array
+    items:
+      $ref: "../../request/jira/JiraIssueDto.yaml"

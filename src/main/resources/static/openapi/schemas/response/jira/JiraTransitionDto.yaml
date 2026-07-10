@@ -1,0 +1,20 @@
+type: object
+description: >
+  Transición de workflow disponible para una issue. Corresponde a una entrada
+  de la respuesta de GET /rest/api/{2,3}/issue/{key}/transitions de Jira.
+properties:
+  id:
+    type: string
+    example: "31"
+  name:
+    type: string
+    example: "In Progress"
+  to:
+    type: object
+    properties:
+      id:
+        type: string
+        example: "3"
+      name:
+        type: string
+        example: "In Progress"

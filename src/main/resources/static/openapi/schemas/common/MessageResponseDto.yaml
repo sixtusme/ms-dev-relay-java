@@ -1,0 +1,6 @@
+type: object
+properties:
+  message:
+    type: string
+    example: "Ha ocurrido un error interno"
+    default: "Ha ocurrido un error interno"

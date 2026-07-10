@@ -1,0 +1,42 @@
+# Todas las propiedades sensibles se resuelven vía ${VAR:default}. En local,
+# VAR se define en el entorno (o se deja el default, vacío para lo sensible).
+# En producción, el pipeline de despliegue inyecta estas mismas variables de
+# entorno desde Vault (mismo path/nombre de propiedad) — no se cambia ni una
+# línea de este fichero entre entornos, y ningún secreto real vive aquí.
+spring:
+  application:
+    name: ms-dev-relay-java
+
+server:
+  port: 8092
+
+logging:
+  level:
+    es.colorbaby.microservices.dev.relay: INFO
+    org.springframework.web: WARN
+
+maestro:
+  jira:
+    base-url: ${JIRA_BASE_URL:https://empresa.atlassian.net}
+    email: ${JIRA_EMAIL:}
+    api-token: ${JIRA_API_TOKEN:}
+    auth-mode: ${JIRA_AUTH_MODE:CLOUD_BASIC}   # CLOUD_BASIC (Jira Cloud) o SERVER_PAT (Jira Server/DC)
+    connect-timeout-ms: ${JIRA_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${JIRA_READ_TIMEOUT_MS:10000}
+
+    sync:
+      mode: ${MAESTRO_JIRA_SYNC_MODE:POLLING}   # WEBHOOK | POLLING | BOTH — cambiar aquí sin tocar código
+      polling-interval-ms: ${MAESTRO_JIRA_POLLING_INTERVAL_MS:60000}
+      webhook-secret: ${MAESTRO_JIRA_WEBHOOK_SECRET:}   # valida X-Maestro-Webhook-Secret en /api/webhooks/jira
+
+    filter:
+      allowed-assignees: ${MAESTRO_JIRA_ALLOWED_ASSIGNEES:}       # emails (Server/DC) o accountIds (Cloud), separados por coma
+      trigger-keyword: ${MAESTRO_JIRA_TRIGGER_KEYWORD:sixai}
+      comment-author-must-be-assignee: ${MAESTRO_JIRA_COMMENT_AUTHOR_MUST_BE_ASSIGNEE:true}
+      trusted-trigger-authors: ${MAESTRO_JIRA_TRUSTED_AUTHORS:}   # accountIds/emails adicionales autorizados, separados por coma
+
+  # --- Reservado para módulos futuros (fuera de alcance de esta tarea) ---
+  # workflow / github / claude-code (con acceso a Obsidian vía el CLAUDE.md de
+  # cada repo en colorbaby/repositories) / jenkins / harbor: mismo prefijo
+  # `maestro.*`, misma resolución env-var -> Vault en prod. Se añaden cuando
+  # se implemente el módulo de orquestación que consume IssueEligibleEvent.

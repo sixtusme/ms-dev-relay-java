@@ -1,0 +1,55 @@
+openapi: 3.0.1
+info:
+  title: Swagger new api dev relay
+  description: Description of new proyect dev relay
+    endpoints declaration
+  termsOfService: http://swagger.io/terms/
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.0.0
+externalDocs:
+  description: Find out more about Swagger
+  url: http://swagger.io
+tags:
+  - name: dev relay api
+    description: All about new api product management
+    externalDocs:
+      description: Find out more
+      url: http://swagger.io
+  - name: Jira
+    description: Cliente Java para REST API de Jira lectura de issues, comentarios, transiciones de estado y asignación.
+      Sin lógica de negocio ni filtrado; eso vive en el micro (back).
+
+servers:
+  - url: /api
+    description: API base path
+
+paths:
+  # =========================
+  # JIRA
+  # =========================
+  /webhooks/jira:
+    $ref: "./openapi/paths/webhooks/jira/post_webhooks_jira.yaml"
+
+components:
+  securitySchemes:
+    webhookSharedSecret:
+      type: apiKey
+      in: header
+      name: X-Maestro-Webhook-Secret
+      description: >
+        Secreto compartido configurado en maestro.jira.webhook-secret.
+        Ver TODO de seguridad en JiraWebhookController: esta validación
+        aún no está implementada en el código, solo prevista en el contrato.
+  schemas:
+    ErrorResponseDto:
+      $ref: "./openapi/schemas/common/ErrorResponseDto.yaml"
+    JiraSearchResultDto:
+      $ref: "./openapi/schemas/response/jira/JiraSearchResultDto.yaml"
+    JiraCommentsResultDto:
+      $ref: "./openapi/schemas/response/jira/JiraCommentsResultDto.yaml"
+    JiraTransitionDto:
+      $ref: "./openapi/schemas/response/jira/JiraTransitionDto.yaml"
+    JiraTransitionsResultDto:
+      $ref: "./openapi/schemas/response/jira/JiraTransitionsResultDto.yaml"

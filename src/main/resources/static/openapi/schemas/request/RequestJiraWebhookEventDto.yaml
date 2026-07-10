@@ -1,0 +1,20 @@
+type: object
+description: >
+  Payload que Jira envía al endpoint de webhook. Se corresponde con
+  com.empresa.maestro.jira.model.webhook.JiraWebhookEvent en jira-lib.
+  Jira incluye muchos más campos; el servicio solo usa los indicados aquí.
+properties:
+  webhookEvent:
+    type: string
+    description: Tipo de evento disparado por Jira.
+    enum:
+      - jira:issue_created
+      - jira:issue_updated
+      - comment_created
+    example: comment_created
+  issue:
+    $ref: "./jira/JiraIssueDto.yaml"
+  comment:
+    $ref: "./jira/JiraCommentDto.yaml"
+required:
+  - webhookEvent

@@ -1,0 +1,13 @@
+type: object
+description: Corresponde a com.empresa.maestro.jira.model.JiraUser en jira-lib.
+properties:
+  accountId:
+    type: string
+    example: "5f8a2e1c9b3f4a0012a3b456"
+  displayName:
+    type: string
+    example: "Sixto Martínez"
+  emailAddress:
+    type: string
+    format: email
+    example: "sixto.martinez@empresa.com"

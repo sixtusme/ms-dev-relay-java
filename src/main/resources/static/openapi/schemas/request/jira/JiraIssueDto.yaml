@@ -1,0 +1,40 @@
+type: object
+description: Corresponde a com.empresa.maestro.jira.model.JiraIssue en jira-lib.
+properties:
+  id:
+    type: string
+    example: "10042"
+  key:
+    type: string
+    description: Clave de la issue, ej. "COLORBABY-123".
+    example: "COLORBABY-123"
+  fields:
+    type: object
+    properties:
+      summary:
+        type: string
+        example: "Añadir endpoint de preferencias de usuario"
+      description:
+        description: >
+          Puede venir como Atlassian Document Format (Jira Cloud, objeto) o como
+          texto plano (Jira Server/DC, string). Se modela sin "type" (cualquier
+          valor JSON) por la misma razón que JiraCommentDto.body. Ver
+          JiraTextExtractor en jira-lib.
+      assignee:
+        $ref: "./JiraUserDto.yaml"
+      reporter:
+        $ref: "./JiraUserDto.yaml"
+      status:
+        type: object
+        properties:
+          id:
+            type: string
+            example: "3"
+          name:
+            type: string
+            example: "In Progress"
+      labels:
+        type: array
+        items:
+          type: string
+        example: ["backend", "api"]

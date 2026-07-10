@@ -1,0 +1,14 @@
+type: object
+description: >
+  Respuesta de GET /rest/api/{2,3}/issue/{key}/comment de Jira.
+properties:
+  startAt:
+    type: integer
+  maxResults:
+    type: integer
+  total:
+    type: integer
+  comments:
+    type: array
+    items:
+      $ref: "../../request/jira/JiraCommentDto.yaml"

@@ -1,0 +1,38 @@
+post:
+  tags:
+    - Jira
+  summary: Recibe eventos de webhook de Jira
+  description: >
+    Endpoint invocado por Jira (Settings > System > WebHooks) cuando
+    ocurre un evento suscrito: creación/actualización de issue o
+    creación de comentario. Solo está activo si
+    maestro.jira.sync.mode es WEBHOOK o BOTH (ver JiraWebhookController).
+    Internamente delega en IssueTriggerService, que aplica el mismo
+    filtro de elegibilidad (asignado permitido + palabra clave en
+    comentario) que usa el polling.
+  operationId: receiveJiraWebhook
+  security:
+    - webhookSharedSecret: []
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: "../../../schemas/request/RequestJiraWebhookEventDto.yaml"
+  responses:
+    "200":
+      description: >
+        Evento recibido y procesado (esto no implica que la issue haya
+        resultado elegible; solo que el webhook se aceptó correctamente).
+    "401":
+      description: Secreto compartido del webhook ausente o inválido.
+      content:
+        application/json:
+          schema:
+            $ref: "../../../schemas/common/ErrorResponseDto.yaml"
+    "400":
+      description: Payload de webhook inválido o no parseable.
+      content:
+        application/json:
+          schema:
+            $ref: "../../../schemas/common/ErrorResponseDto.yaml"

@@ -1,0 +1,9 @@
+type: object
+description: >
+  Respuesta de GET /rest/api/{2,3}/issue/{key}/transitions de Jira: lista de
+  transiciones de workflow disponibles para la issue en su estado actual.
+properties:
+  transitions:
+    type: array
+    items:
+      $ref: "./JiraTransitionDto.yaml"
