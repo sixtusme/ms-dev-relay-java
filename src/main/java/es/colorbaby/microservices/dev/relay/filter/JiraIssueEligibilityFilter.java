@@ -4,6 +4,8 @@ import es.colorbaby.microservices.dev.relay.config.JiraFilterProperties;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraCommentDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
+import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDtoFields;
+import es.colorbaby.microservices.dev.relay.openapi.model.JiraTransitionDtoTo;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraUserDto;
 import java.util.List;
 import java.util.Optional;
@@ -32,8 +34,45 @@ public class JiraIssueEligibilityFilter {
     return matchesAny(assignee, filterProperties.getAllowedAssignees());
   }
 
+  /**
+   * Comprobación rápida sin I/O del estado de la issue. El polling ya filtra por estado en el JQL,
+   * pero el webhook no: su payload trae la issue con su estado, y hay que descartar aquí las que no
+   * están en {@code maestro.jira.filter.statuses}. Lista vacía = sin filtro de estado.
+   */
+  public boolean isStatusAllowed(JiraIssueDto issue) {
+    List<String> allowed = filterProperties.getStatuses();
+    if (allowed == null || allowed.isEmpty()) {
+      return true;
+    }
+    JiraIssueDtoFields fields = issue == null ? null : issue.getFields();
+    JiraTransitionDtoTo status = fields == null ? null : fields.getStatus();
+    String name = status == null ? null : status.getName();
+    if (name == null) {
+      return false;
+    }
+    return allowed.stream().anyMatch(s -> s != null && s.strip().equalsIgnoreCase(name.strip()));
+  }
+
+  /**
+   * Comprobación rápida sin I/O: la tarea ya lleva la etiqueta de procesada. Es la idempotencia que
+   * sobrevive a reinicios y cubre el webhook (el polling ya la excluye en el JQL). Etiqueta vacía en
+   * config = sin marca, siempre {@code false}.
+   */
+  public boolean isAlreadyProcessed(JiraIssueDto issue) {
+    String label = filterProperties.getProcessedLabel();
+    if (label == null || label.isBlank()) {
+      return false;
+    }
+    JiraIssueDtoFields fields = issue == null ? null : issue.getFields();
+    List<String> labels = fields == null ? null : fields.getLabels();
+    if (labels == null) {
+      return false;
+    }
+    return labels.stream().anyMatch(l -> l != null && l.strip().equalsIgnoreCase(label.strip()));
+  }
+
   public Optional<EligibilityResult> evaluate(JiraIssueDto issue, List<JiraCommentDto> comments) {
-    if (!isAssigneeAllowed(issue)) {
+    if (!isAssigneeAllowed(issue) || !isStatusAllowed(issue) || isAlreadyProcessed(issue)) {
       return Optional.empty();
     }
     JiraUserDto assignee = issue.getFields().getAssignee();

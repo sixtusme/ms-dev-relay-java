@@ -5,7 +5,7 @@ import es.colorbaby.microservices.dev.relay.event.TriggerSource;
 import es.colorbaby.microservices.dev.relay.filter.EligibilityResult;
 import es.colorbaby.microservices.dev.relay.filter.JiraIssueEligibilityFilter;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
-import es.colorbaby.microservices.dev.relay.jira.client.JiraClientException;
+import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraCommentDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraUserDto;
@@ -48,6 +48,14 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
         log.debug("Issue {} descartada: el asignado no está en allowed-assignees", issueKey);
         return;
       }
+      if (!eligibilityFilter.isStatusAllowed(issue)) {
+        log.debug("Issue {} descartada: su estado no está en filter.statuses", issueKey);
+        return;
+      }
+      if (eligibilityFilter.isAlreadyProcessed(issue)) {
+        log.debug("Issue {} descartada: ya tiene la etiqueta de procesada", issueKey);
+        return;
+      }
 
       List<JiraCommentDto> comments = jiraClient.getComments(issueKey);
       Optional<EligibilityResult> eligibility = eligibilityFilter.evaluate(issue, comments);
@@ -61,28 +69,22 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
         return;
       }
 
-      log.info("Issue {} elegible ({}), confirmando y publicando evento", issueKey, source);
-      confirmDetection(issueKey);
+      log.info("Issue {} elegible ({}), publicando evento", issueKey, source);
 
       JiraUserDto assignee = issue.getFields() == null ? null : issue.getFields().getAssignee();
+      JiraCommentDto trigger = eligibility.get().triggeringComment();
+      JiraUserDto triggerAuthor = trigger.getAuthor();
       eventPublisher.publishEvent(new IssueEligibleEvent(
           issueKey,
           assignee == null ? null : assignee.getAccountId(),
-          eligibility.get().triggeringComment().getId(),
+          trigger.getId(),
+          triggerAuthor == null ? null : triggerAuthor.getAccountId(),
+          triggerAuthor == null ? null : triggerAuthor.getDisplayName(),
+          JiraTextExtractor.extractPlainText(trigger.getBody()),
           source,
           Instant.now()));
     } catch (RuntimeException e) {
       log.error("Error procesando la issue {} ({})", issueKey, source, e);
-    }
-  }
-
-  private void confirmDetection(String issueKey) {
-    try {
-      jiraClient.addComment(issueKey,
-          "Detectada por sixai: esta tarea ha sido identificada como elegible "
-              + "y será procesada automáticamente.");
-    } catch (JiraClientException e) {
-      log.warn("No se pudo comentar la confirmación de detección en {}", issueKey, e);
     }
   }
 }
