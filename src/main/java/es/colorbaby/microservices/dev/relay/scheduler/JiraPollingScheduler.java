@@ -68,6 +68,27 @@ public class JiraPollingScheduler {
     String assignees = allowedAssignees.stream()
         .map(a -> "\"" + a.replace("\"", "") + "\"")
         .collect(Collectors.joining(","));
-    return "assignee in (" + assignees + ") ORDER BY updated DESC";
+
+    StringBuilder jql = new StringBuilder("assignee in (").append(assignees).append(")");
+
+    // Solo las tareas en los estados configurados (p. ej. "TAREAS EN COLA"): así Jira devuelve
+    // pocas en vez de todas las asignadas, y no se tocan las finalizadas ni las ya en curso.
+    List<String> statuses = filterProperties.getStatuses();
+    if (statuses != null && !statuses.isEmpty()) {
+      String values = statuses.stream()
+          .map(s -> "\"" + s.replace("\"", "") + "\"")
+          .collect(Collectors.joining(","));
+      jql.append(" AND status in (").append(values).append(")");
+    }
+
+    // Excluye las ya procesadas por su etiqueta de idempotencia. "labels IS EMPTY OR ..." porque en
+    // JQL una tarea sin etiquetas no la devuelve un simple "labels NOT IN (...)".
+    String processedLabel = filterProperties.getProcessedLabel();
+    if (processedLabel != null && !processedLabel.isBlank()) {
+      String label = processedLabel.replace("\"", "");
+      jql.append(" AND (labels IS EMPTY OR labels NOT IN (\"").append(label).append("\"))");
+    }
+
+    return jql.append(" ORDER BY updated DESC").toString();
   }
 }
