@@ -45,12 +45,15 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
     String issueKey = issue.getKey();
     try {
       if (!eligibilityFilter.isAssigneeAllowed(issue)) {
+        log.debug("Issue {} descartada: el asignado no está en allowed-assignees", issueKey);
         return;
       }
 
       List<JiraCommentDto> comments = jiraClient.getComments(issueKey);
       Optional<EligibilityResult> eligibility = eligibilityFilter.evaluate(issue, comments);
       if (eligibility.isEmpty()) {
+        log.debug("Issue {} descartada: ninguno de sus {} comentarios cumple (palabra clave "
+            + "del asignado)", issueKey, comments.size());
         return;
       }
       if (!processedIssuesTracker.markIfNew(issueKey)) {
