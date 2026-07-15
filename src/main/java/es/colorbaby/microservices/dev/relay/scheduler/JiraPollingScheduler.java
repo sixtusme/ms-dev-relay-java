@@ -38,15 +38,20 @@ public class JiraPollingScheduler {
       return;
     }
 
+    String jql = buildJql(allowedAssignees);
+    log.debug("Polling: buscando issues con JQL [{}]", jql);
+
     List<JiraIssueDto> issues;
     try {
-      issues = jiraClient.searchIssuesByJql(buildJql(allowedAssignees));
+      issues = jiraClient.searchIssuesByJql(jql);
     } catch (RuntimeException e) {
       // Un fallo de la búsqueda no debe tumbar el scheduler: el próximo ciclo
       // reintentará.
       log.error("Fallo sondeando issues por JQL; se reintentará en el próximo ciclo", e);
       return;
     }
+
+    log.debug("Polling: {} issues asignadas encontradas", issues.size());
 
     for (JiraIssueDto issue : issues) {
       try {
