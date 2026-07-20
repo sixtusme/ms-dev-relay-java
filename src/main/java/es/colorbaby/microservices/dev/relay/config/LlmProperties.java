@@ -1,5 +1,7 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import java.util.HashMap;
+import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -28,8 +30,15 @@ public class LlmProperties {
   /** URL base del endpoint compatible con OpenAI, sin la barra final. */
   private String baseUrl = "http://localhost:11434/v1";
 
-  /** Modelo a usar (p. ej. {@code llama3.2}, {@code gpt-4o-mini}). */
+  /** Modelo por defecto y de reserva (p. ej. {@code llama3.2}, {@code gpt-4o-mini}). */
   private String model = "llama3.2";
+
+  /**
+   * Alias de modelo por rol lógico ({@code responder}, {@code selector}, {@code planner}…). Con un
+   * gateway de modelos delante, cada rol se enruta a un modelo distinto sin tocar código. Si un rol
+   * no está aquí (o su alias está en blanco), se usa {@code model}. Ver /ai/gateway-de-modelos.
+   */
+  private Map<String, String> models = new HashMap<>();
 
   /** Clave del proveedor. Vacía para Ollama; el token para un proveedor cloud. */
   private String apiKey = "";
@@ -48,4 +57,22 @@ public class LlmProperties {
 
   /** System prompt que define el comportamiento de Sixai. */
   private String systemPrompt = "";
+
+  /**
+   * Modelo a usar para un rol: su alias de {@code models} si está mapeado y no vacío; si no, el
+   * {@code model} por defecto. Un alias en blanco (típico cuando la env-var no se define) equivale
+   * a "usa el modelo por defecto", así que sembrar los roles vacíos en el yml es seguro.
+   *
+   * @param role rol lógico (ver {@code LlmRoles}); puede ser null o vacío
+   * @return el alias del rol o, en su defecto, el modelo por defecto
+   */
+  public String modelFor(final String role) {
+    if (role != null && !role.isBlank()) {
+      final String alias = models.get(role);
+      if (alias != null && !alias.isBlank()) {
+        return alias;
+      }
+    }
+    return model;
+  }
 }
