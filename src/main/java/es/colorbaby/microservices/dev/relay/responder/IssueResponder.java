@@ -8,8 +8,11 @@ import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraAdf;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
 import es.colorbaby.microservices.dev.relay.llm.LlmClient;
+import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
+import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDtoFields;
+import es.colorbaby.microservices.dev.relay.pullrequest.PullRequestService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +22,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Responde una tarea de Jira elegible: publica un comentario, la pone en curso y la marca como
- * procesada (etiqueta de idempotencia).
+ * Responde una tarea de Jira elegible: publica un comentario, la pone en curso, la marca como
+ * procesada (etiqueta de idempotencia) y arranca el trabajo en GitHub abriendo las PRs necesarias
+ * ({@link PullRequestService}).
  *
  * <p>Con la IA apagada ({@code maestro.llm.enabled=false}) el comentario es el texto fijo de
  * {@code maestro.responder.ack-comment} y NO se llama a ningún modelo. Con la IA encendida, el
@@ -48,6 +52,7 @@ public class IssueResponder {
   private final LlmProperties llmProperties;
   private final ResponderProperties responderProperties;
   private final JiraFilterProperties filterProperties;
+  private final PullRequestService pullRequestService;
 
   @EventListener
   public void onIssueEligible(final IssueEligibleEvent event) {
@@ -61,6 +66,7 @@ public class IssueResponder {
       }
       moveToInProgress(issueKey);
       markProcessed(issueKey);
+      pullRequestService.openForIssue(issueKey);
     } catch (RuntimeException e) {
       // No se relanza: un fallo respondiendo no debe tumbar el ciclo de detección.
       log.error("No se pudo responder la issue {}", issueKey, e);
@@ -89,7 +95,8 @@ public class IssueResponder {
         + "Descripción:\n"
         + (description == null || description.isBlank() ? "(sin descripción)" : description);
 
-    return llmClient.complete(llmProperties.getSystemPrompt(), userPrompt);
+    return llmClient.complete(LlmRequest.of(
+        llmProperties.getSystemPrompt(), userPrompt, LlmRoles.RESPONDER, issueKey));
   }
 
   /**

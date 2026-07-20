@@ -38,3 +38,18 @@ properties:
         items:
           type: string
         example: ["backend", "api"]
+      parent:
+        type: object
+        description: >
+          Épica o tarea padre (Jira Cloud). El summary del parent es el nombre de la épica,
+          que sixai usa para resolver a qué repos abre PR.
+        properties:
+          key:
+            type: string
+            example: "USA-900"
+          fields:
+            type: object
+            properties:
+              summary:
+                type: string
+                example: "PIM - Migración"
