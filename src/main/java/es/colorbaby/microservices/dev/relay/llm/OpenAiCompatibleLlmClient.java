@@ -31,34 +31,52 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
   }
 
   @Override
-  public String complete(final String systemPrompt, final String userPrompt) {
+  public String complete(final LlmRequest request) {
     String url = properties.getBaseUrl().replaceAll("/+$", "") + "/chat/completions";
+    String model = properties.modelFor(request.role());
 
     Map<String, Object> body = Map.of(
-        "model", properties.getModel(),
+        "model", model,
         "temperature", properties.getTemperature(),
         "max_tokens", properties.getMaxTokens(),
         "stream", false,
         "messages", List.of(
-            Map.of("role", "system", "content", systemPrompt),
-            Map.of("role", "user", "content", userPrompt)));
+            Map.of("role", "system", "content", request.systemPrompt()),
+            Map.of("role", "user", "content", request.userPrompt())));
 
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_JSON);
-    // Ollama lo ignora; los proveedores cloud lo necesitan. Solo se manda si hay clave.
-    if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
-      headers.setBearerAuth(properties.getApiKey());
-    }
+    HttpHeaders headers = buildHeaders(request);
 
     Map<String, Object> response;
     try {
       response = postForMap(url, new HttpEntity<>(body, headers));
     } catch (RestClientException e) {
-      throw new LlmClientException(
-          "Fallo llamando al LLM (" + properties.getProvider() + " @ " + url + ")", e);
+      throw new LlmClientException("Fallo llamando al LLM (" + properties.getProvider()
+          + " @ " + url + ", modelo " + model + ")", e);
     }
 
     return extractContent(response);
+  }
+
+  /**
+   * Cabeceras de la petición: content-type, auth (si hay clave) y la metadata como {@code x-sixai-*}
+   * (rol e issue). Ollama y OpenAI ignoran esas cabeceras; un gateway de modelos las usa para traza
+   * y coste por tarea. El prefijo {@code x-sixai-} evita chocar con nada estándar.
+   */
+  private HttpHeaders buildHeaders(final LlmRequest request) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
+      headers.setBearerAuth(properties.getApiKey());
+    }
+    if (request.role() != null && !request.role().isBlank()) {
+      headers.add("x-sixai-role", request.role());
+    }
+    request.metadata().forEach((key, value) -> {
+      if (key != null && !key.isBlank() && value != null && !value.isBlank()) {
+        headers.add("x-sixai-" + key, value);
+      }
+    });
+    return headers;
   }
 
   @SuppressWarnings("unchecked")
