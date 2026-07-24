@@ -1,5 +1,6 @@
 package es.colorbaby.microservices.dev.relay.service.impl;
 
+import es.colorbaby.microservices.dev.relay.command.CommandService;
 import es.colorbaby.microservices.dev.relay.event.IssueEligibleEvent;
 import es.colorbaby.microservices.dev.relay.event.TriggerSource;
 import es.colorbaby.microservices.dev.relay.filter.EligibilityResult;
@@ -8,8 +9,11 @@ import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraCommentDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
+import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDtoFields;
+import es.colorbaby.microservices.dev.relay.openapi.model.JiraTransitionDtoTo;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraUserDto;
 import es.colorbaby.microservices.dev.relay.config.AsyncConfig;
+import es.colorbaby.microservices.dev.relay.config.CommandProperties;
 import es.colorbaby.microservices.dev.relay.service.IssueTriggerService;
 import es.colorbaby.microservices.dev.relay.tracker.ProcessedIssuesTracker;
 import java.time.Instant;
@@ -30,6 +34,8 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
   private final JiraIssueEligibilityFilter eligibilityFilter;
   private final ProcessedIssuesTracker processedIssuesTracker;
   private final ApplicationEventPublisher eventPublisher;
+  private final CommandService commandService;
+  private final CommandProperties commandProperties;
 
   /**
    * Procesamiento en background: el webhook ya ha respondido 200 y el polling
@@ -46,6 +52,11 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
     try {
       if (!eligibilityFilter.isAssigneeAllowed(issue)) {
         log.debug("Issue {} descartada: el asignado no está en allowed-assignees", issueKey);
+        return;
+      }
+      // Tarea ya arrancada (En curso / TEST): no se re-arranca, se atienden sus comandos.
+      if (commandProperties.isEnabled() && isCommandStatus(issue)) {
+        commandService.handle(issue);
         return;
       }
       if (!eligibilityFilter.isStatusAllowed(issue)) {
@@ -86,5 +97,20 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
     } catch (RuntimeException e) {
       log.error("Error procesando la issue {} ({})", issueKey, source, e);
     }
+  }
+
+  /** True si la tarea está en un estado donde se aceptan comandos (En curso, TEST…). */
+  private boolean isCommandStatus(final JiraIssueDto issue) {
+    final List<String> statuses = commandProperties.getStatuses();
+    if (statuses == null || statuses.isEmpty()) {
+      return false;
+    }
+    final JiraIssueDtoFields fields = issue.getFields();
+    final JiraTransitionDtoTo status = fields == null ? null : fields.getStatus();
+    final String name = status == null ? null : status.getName();
+    if (name == null) {
+      return false;
+    }
+    return statuses.stream().anyMatch(s -> s != null && s.strip().equalsIgnoreCase(name.strip()));
   }
 }

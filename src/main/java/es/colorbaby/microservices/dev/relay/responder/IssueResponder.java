@@ -1,5 +1,7 @@
 package es.colorbaby.microservices.dev.relay.responder;
 
+import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
+import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.config.JiraFilterProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.config.ResponderProperties;
@@ -53,10 +55,15 @@ public class IssueResponder {
   private final ResponderProperties responderProperties;
   private final JiraFilterProperties filterProperties;
   private final PullRequestService pullRequestService;
+  private final TaskRecorder taskRecorder;
 
   @EventListener
   public void onIssueEligible(final IssueEligibleEvent event) {
     String issueKey = event.issueKey();
+    // Se abre el registro antes de nada: aunque algo falle después, queda constancia de que sixai
+    // cogió la tarea, quién la mandó y cuándo.
+    taskRecorder.start(issueKey, event.triggeringCommentAuthorAccountId(),
+        event.triggeringCommentAuthorName(), String.valueOf(event.source()));
     try {
       String replyText = buildReplyText(issueKey);
       if (replyText != null && !replyText.isBlank()) {
@@ -66,6 +73,7 @@ public class IssueResponder {
       }
       moveToInProgress(issueKey);
       markProcessed(issueKey);
+      taskRecorder.record(issueKey, TaskEventType.IN_PROGRESS, "sixai", null);
       pullRequestService.openForIssue(issueKey);
     } catch (RuntimeException e) {
       // No se relanza: un fallo respondiendo no debe tumbar el ciclo de detección.

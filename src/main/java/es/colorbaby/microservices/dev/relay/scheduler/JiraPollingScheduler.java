@@ -1,5 +1,6 @@
 package es.colorbaby.microservices.dev.relay.scheduler;
 
+import es.colorbaby.microservices.dev.relay.config.CommandProperties;
 import es.colorbaby.microservices.dev.relay.config.JiraFilterProperties;
 import es.colorbaby.microservices.dev.relay.event.TriggerSource;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
@@ -28,6 +29,7 @@ public class JiraPollingScheduler {
 
   private final JiraClient jiraClient;
   private final JiraFilterProperties filterProperties;
+  private final CommandProperties commandProperties;
   private final IssueTriggerService issueTriggerService;
 
   @Scheduled(fixedDelayString = "${maestro.jira.sync.polling-interval-ms:60000}")
@@ -64,31 +66,67 @@ public class JiraPollingScheduler {
     }
   }
 
+  /**
+   * El JQL cubre DOS poblaciones distintas, en OR: las tareas candidatas a arrancar (en cola y sin
+   * la etiqueta de procesada) y las ya arrancadas donde pueden llegar comandos (En curso, TEST).
+   * Sin ese OR, las de comandos nunca se traerían: tienen otro estado y además ya llevan etiqueta.
+   */
   private String buildJql(List<String> allowedAssignees) {
-    String assignees = allowedAssignees.stream()
-        .map(a -> "\"" + a.replace("\"", "") + "\"")
-        .collect(Collectors.joining(","));
+    StringBuilder jql = new StringBuilder("assignee in (")
+        .append(quoted(allowedAssignees)).append(")");
 
-    StringBuilder jql = new StringBuilder("assignee in (").append(assignees).append(")");
+    String startClause = startClause();
+    String commandClause = commandClause();
 
-    // Solo las tareas en los estados configurados (p. ej. "TAREAS EN COLA"): así Jira devuelve
-    // pocas en vez de todas las asignadas, y no se tocan las finalizadas ni las ya en curso.
-    List<String> statuses = filterProperties.getStatuses();
-    if (statuses != null && !statuses.isEmpty()) {
-      String values = statuses.stream()
-          .map(s -> "\"" + s.replace("\"", "") + "\"")
-          .collect(Collectors.joining(","));
-      jql.append(" AND status in (").append(values).append(")");
-    }
-
-    // Excluye las ya procesadas por su etiqueta de idempotencia. "labels IS EMPTY OR ..." porque en
-    // JQL una tarea sin etiquetas no la devuelve un simple "labels NOT IN (...)".
-    String processedLabel = filterProperties.getProcessedLabel();
-    if (processedLabel != null && !processedLabel.isBlank()) {
-      String label = processedLabel.replace("\"", "");
-      jql.append(" AND (labels IS EMPTY OR labels NOT IN (\"").append(label).append("\"))");
+    if (startClause != null && commandClause != null) {
+      jql.append(" AND ((").append(startClause).append(") OR (").append(commandClause).append("))");
+    } else if (startClause != null) {
+      jql.append(" AND ").append(startClause);
+    } else if (commandClause != null) {
+      jql.append(" AND ").append(commandClause);
     }
 
     return jql.append(" ORDER BY updated DESC").toString();
+  }
+
+  /** Candidatas a ARRANQUE: en los estados de cola y sin la etiqueta de idempotencia. */
+  private String startClause() {
+    StringBuilder clause = new StringBuilder();
+    List<String> statuses = filterProperties.getStatuses();
+    if (statuses != null && !statuses.isEmpty()) {
+      clause.append("status in (").append(quoted(statuses)).append(")");
+    }
+    // "labels IS EMPTY OR ..." porque en JQL una tarea sin etiquetas no la devuelve un simple
+    // "labels NOT IN (...)".
+    String processedLabel = filterProperties.getProcessedLabel();
+    if (processedLabel != null && !processedLabel.isBlank()) {
+      if (!clause.isEmpty()) {
+        clause.append(" AND ");
+      }
+      clause.append("(labels IS EMPTY OR labels NOT IN (\"")
+          .append(processedLabel.replace("\"", "")).append("\"))");
+    }
+    return clause.isEmpty() ? null : clause.toString();
+  }
+
+  /**
+   * Candidatas a COMANDO: ya en curso o en TEST. Aquí NO se excluye la etiqueta de procesada: son
+   * justo tareas ya arrancadas, y lo que se busca en ellas es la conversación.
+   */
+  private String commandClause() {
+    if (!commandProperties.isEnabled()) {
+      return null;
+    }
+    List<String> statuses = commandProperties.getStatuses();
+    if (statuses == null || statuses.isEmpty()) {
+      return null;
+    }
+    return "status in (" + quoted(statuses) + ")";
+  }
+
+  private static String quoted(List<String> values) {
+    return values.stream()
+        .map(v -> "\"" + v.replace("\"", "") + "\"")
+        .collect(Collectors.joining(","));
   }
 }

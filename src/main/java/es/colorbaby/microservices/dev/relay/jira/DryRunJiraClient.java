@@ -32,6 +32,11 @@ public class DryRunJiraClient implements JiraClient {
   }
 
   @Override
+  public byte[] downloadAttachment(String contentUrl) {
+    return delegate.downloadAttachment(contentUrl);
+  }
+
+  @Override
   public List<JiraIssueDto> searchIssuesByJql(String jql) {
     return delegate.searchIssuesByJql(jql);
   }
