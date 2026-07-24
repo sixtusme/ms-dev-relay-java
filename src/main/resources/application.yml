@@ -418,6 +418,23 @@ maestro:
   # OJO b2b2c: su producción vive en Dinahosting y usa OTRO JOB, no solo otro entorno.
   # Un repo que no esté en `repos` no es desplegable por este pipeline (los repos nuevos aún no
   # tienen rol de Ansible): sixai lo dice y no lo intenta. Ver /ai/ciclo-de-vida-y-comandos.
+  # Verificación de la PR antes de aprobarla: se compila su rama para saber si el código del coder
+  # se sostiene. Usa los MISMOS jobs que el despliegue (maestro.deploy.build-jobs y .repos), pero con
+  # FAST_SNAPSHOT_BUILD=true, que compila SIN crear el tag release/X.Y.Z ni empujar a la rama —
+  # efectos que no se quieren en una rama que a lo mejor nunca se mergea.
+  verification:
+    enabled: ${MAESTRO_VERIFICATION_ENABLED:false}
+    dry-run: ${MAESTRO_VERIFICATION_DRY_RUN:true}
+    # Por defecto NO bloquea: el valor está en que quien aprueba lo VEA. Un bloqueo duro deja la
+    # entrega atascada cuando el que falla es Jenkins y no el código. Se sube a true cuando la
+    # verificación lleve tiempo siendo fiable.
+    block-approval: ${MAESTRO_VERIFICATION_BLOCK:false}
+    poll-interval-ms: ${MAESTRO_VERIFICATION_POLL_INTERVAL_MS:30000}
+    # Por etapa, no por verificación: se reinicia al pasar de cola a build.
+    max-attempts: ${MAESTRO_VERIFICATION_MAX_ATTEMPTS:60}
+    diagnose-on-failure: ${MAESTRO_VERIFICATION_DIAGNOSE:true}
+    console-max-chars: ${MAESTRO_VERIFICATION_CONSOLE_MAX_CHARS:8000}
+
   deploy:
     # Interruptor general. Con false, sixai no compila ni despliega.
     enabled: ${MAESTRO_DEPLOY_ENABLED:false}

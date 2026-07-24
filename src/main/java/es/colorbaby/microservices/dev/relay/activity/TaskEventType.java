@@ -19,6 +19,13 @@ public enum TaskEventType {
   /** Se ha abierto una PR hacia develop. */
   PR_OPENED,
 
+  /** Se ha mandado compilar la rama de una PR para saber si se sostiene. */
+  VERIFY_STARTED,
+
+  /** La rama de la PR compila / no compila. */
+  VERIFY_OK,
+  VERIFY_FAILED,
+
   /** Alguien ha aprobado el merge desde el front. */
   APPROVED,
 

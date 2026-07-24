@@ -119,6 +119,9 @@ public class TaskMonitorService {
       case IN_PROGRESS -> new Stage("Analizando la tarea", "IN_PROGRESS", detail);
       case CODE_GENERATED -> new Stage("Escribiendo código", "CODE_GENERATED", detail);
       case PR_OPENED -> new Stage("Esperando aprobación", "AWAITING_APPROVAL", detail);
+      case VERIFY_STARTED -> new Stage("Comprobando que compila", "VERIFYING", detail);
+      case VERIFY_OK -> new Stage("Compila · esperando aprobación", "AWAITING_APPROVAL", detail);
+      case VERIFY_FAILED -> new Stage("No compila", "VERIFY_FAILED", detail);
       case APPROVED -> new Stage("Aprobada", "APPROVED", detail);
       case MERGED -> new Stage("Mergeada a develop", "MERGED", detail);
       case BUILD_STARTED -> new Stage("Compilando", "BUILD_RUNNING", detail);

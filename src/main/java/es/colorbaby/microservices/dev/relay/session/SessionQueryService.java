@@ -2,11 +2,14 @@ package es.colorbaby.microservices.dev.relay.session;
 
 import es.colorbaby.microservices.dev.relay.config.GithubIntegrationProperties;
 import es.colorbaby.microservices.dev.relay.github.client.GithubClient;
+import es.colorbaby.microservices.dev.relay.verification.VerificationRun;
+import es.colorbaby.microservices.dev.relay.verification.VerificationRunRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Component;
 public class SessionQueryService {
 
   private final GithubClient githubClient;
+  private final VerificationRunRepository verifications;
   private final GithubIntegrationProperties properties;
 
   /** Sesiones abiertas ahora mismo (una por issue con PRs de sixai). Vacío si GitHub está apagado. */
@@ -48,14 +52,36 @@ public class SessionQueryService {
           continue;
         }
         final String issueKey = issueKeyFromHead(head, prefix);
+        // El veredicto de "¿esto compila?" viaja con la PR: es lo que hay que saber ANTES de
+        // aprobar, y el botón de aprobar está justo al lado.
+        final Optional<VerificationRun> check = verificationOf(issueKey, repo);
         byIssue.computeIfAbsent(issueKey, k -> new ArrayList<>())
-            .add(new SixaiPrDto(repo, pr.number(), pr.url(), head, base));
+            .add(new SixaiPrDto(repo, pr.number(), pr.url(), head, base, verdict(check),
+                check.map(VerificationRun::getFailureReason).orElse(null)));
       }
     }
 
     final List<SixaiSessionDto> sessions = new ArrayList<>();
     byIssue.forEach((issueKey, prs) -> sessions.add(new SixaiSessionDto(issueKey, issueKey, prs)));
     return sessions;
+  }
+
+  /** La verificación más reciente de esa PR (la última del repo dentro de la tarea). */
+  private Optional<VerificationRun> verificationOf(final String issueKey, final String repo) {
+    return verifications.findByIssueKeyOrderByIdDesc(issueKey).stream()
+        .filter(run -> repo.equals(run.getRepo()))
+        .findFirst();
+  }
+
+  private static String verdict(final Optional<VerificationRun> check) {
+    if (check.isEmpty()) {
+      return SixaiPrDto.NONE;
+    }
+    return switch (check.get().getStatus()) {
+      case RUNNING -> SixaiPrDto.PENDING;
+      case SUCCEEDED -> SixaiPrDto.OK;
+      case FAILED -> SixaiPrDto.FAILED;
+    };
   }
 
   private Set<String> allRepos() {

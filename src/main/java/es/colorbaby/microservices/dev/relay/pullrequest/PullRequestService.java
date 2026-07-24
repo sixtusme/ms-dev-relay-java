@@ -11,6 +11,7 @@ import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDtoFields;
 import es.colorbaby.microservices.dev.relay.report.ReportService;
+import es.colorbaby.microservices.dev.relay.verification.VerificationService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,7 @@ public class PullRequestService {
   private final CoderService coderService;
   private final TaskRecorder taskRecorder;
   private final ReportService reportService;
+  private final VerificationService verificationService;
   private final GithubIntegrationProperties properties;
   private final JiraProperties jiraProperties;
 
@@ -150,8 +152,9 @@ public class PullRequestService {
           codedRepos.add("- **" + repo + "** — PR [#" + pr.number() + "](" + pr.url() + "), rama `"
               + branch + "` → `" + base + "`");
         }
-        // La observación del build NO arranca aquí: empieza tras aprobar y mergear la PR a develop
-        // (Fase 3), que llamará a BuildWatchService.watch(issueKey, repo, develop).
+        // Se manda compilar la rama YA, para que cuando alguien mire la PR sepa si se sostiene.
+        // El veredicto tarda unos minutos y llega solo, a la tarea y al panel.
+        verificationService.verify(issueKey, repo, branch, pr.number());
       } catch (RuntimeException e) {
         log.error("No se pudo abrir la PR en {} para {}: {}", repo, issueKey, e.getMessage());
       }

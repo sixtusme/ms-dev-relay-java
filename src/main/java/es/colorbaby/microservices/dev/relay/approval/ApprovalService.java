@@ -15,6 +15,7 @@ import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraIssueDtoFields;
 import es.colorbaby.microservices.dev.relay.openapi.model.JiraUserDto;
 import es.colorbaby.microservices.dev.relay.pullrequest.RepoResolver;
+import es.colorbaby.microservices.dev.relay.verification.VerificationService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +44,7 @@ public class ApprovalService {
   private final RepoResolver repoResolver;
   private final DeploymentService deploymentService;
   private final DeploymentBatchRepository batches;
+  private final VerificationService verificationService;
   private final TaskRecorder taskRecorder;
   private final GithubIntegrationProperties githubProperties;
   private final ApprovalProperties properties;
@@ -96,6 +98,14 @@ public class ApprovalService {
     }
     if (properties.isDryRun()) {
       log.info("[DRY-RUN] Mergearía a develop para {}: {}", issueKey, prByRepo);
+      return;
+    }
+    // Solo frena si está configurado para bloquear. Por defecto el veredicto es informativo: quien
+    // aprueba lo ve en el panel y decide, porque a veces el que falla es Jenkins y no el código.
+    if (verificationService.blocks(issueKey)) {
+      log.warn("{} tiene una verificación fallida y el bloqueo está activo; no se mergea", issueKey);
+      jiraClient.addComment(issueKey, "⛔ No mergeo: alguna PR de esta tarea no compila. "
+          + "Corrige el fallo (o desactiva maestro.verification.block-approval) y vuelve a aprobar.");
       return;
     }
     taskRecorder.record(issueKey, TaskEventType.APPROVED, actor(approvedBy),
