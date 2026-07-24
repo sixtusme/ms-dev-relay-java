@@ -111,8 +111,13 @@ public class DeploymentRun {
     this.deployJob = deployJob;
   }
 
-  /** Suma un sondeo y devuelve el total. */
+  /** Suma un sondeo de la etapa actual y devuelve el total. */
   public int incrementAttempts() {
     return ++attempts;
+  }
+
+  /** Vuelve a empezar a contar: se llama al pasar de etapa, porque el tope es por etapa. */
+  public void resetAttempts() {
+    this.attempts = 0;
   }
 }

@@ -40,7 +40,12 @@ public class DeploymentProperties {
   /** Intervalo del orquestador (ms). Es el {@code fixedDelay} del barrido. */
   private long pollIntervalMs = 30000;
 
-  /** Tope de sondeos por despliegue antes de rendirse (build + deploy pueden tardar). */
+  /**
+   * Tope de sondeos <b>por etapa</b> antes de rendirse; se reinicia al pasar de etapa. Con el
+   * intervalo por defecto son 30 minutos para compilar y otros 30 para desplegar, en vez de 30 para
+   * todo junto: como presupuesto único se quedaba corto en cuanto el servicio era grande, y un
+   * despliegue que iba bien se marcaba como agotado.
+   */
   private int maxAttempts = 60;
 
   /** Si al fallar un job se pide al LLM un diagnóstico de la consola. */

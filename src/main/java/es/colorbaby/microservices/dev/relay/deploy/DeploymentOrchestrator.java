@@ -2,7 +2,6 @@ package es.colorbaby.microservices.dev.relay.deploy;
 
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
-import es.colorbaby.microservices.dev.relay.harbor.client.HarborClient;
 import es.colorbaby.microservices.dev.relay.jenkins.client.JenkinsClient;
 import es.colorbaby.microservices.dev.relay.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
@@ -40,7 +39,7 @@ public class DeploymentOrchestrator {
   private final DeploymentRunRepository runs;
   private final DeploymentCoordinator coordinator;
   private final JenkinsClient jenkinsClient;
-  private final HarborClient harborClient;
+  private final ImageVersionResolver imageVersionResolver;
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
   private final DeployDiagnosisService deployDiagnosis;
@@ -65,15 +64,22 @@ public class DeploymentOrchestrator {
 
   private void advance(final DeploymentRun run) {
     if (run.incrementAttempts() > properties.getMaxAttempts()) {
-      finishFailure(run, "se agotó la espera siguiendo el despliegue");
+      finishFailure(run, "se agotó la espera en la etapa " + run.getStage());
       return;
     }
-    switch (run.getStage()) {
+    final DeploymentRun.Stage before = run.getStage();
+    switch (before) {
       case BUILD_QUEUED -> resolveQueued(run, DeploymentRun.Stage.BUILD_RUNNING);
       case BUILD_RUNNING -> onBuildRunning(run);
       case DEPLOY_QUEUED -> resolveQueued(run, DeploymentRun.Stage.DEPLOY_RUNNING);
       case DEPLOY_RUNNING -> onDeployRunning(run);
-      default -> log.warn("Estado no contemplado: {}", run.getStage());
+      default -> log.warn("Estado no contemplado: {}", before);
+    }
+    // El tope es POR ETAPA, así que al avanzar se reinicia. Como presupuesto único no daba: cubría
+    // build + Trivy + deploy con el mismo contador, y un servicio grande pero perfectamente sano se
+    // marcaba como "se agotó la espera" a mitad de un despliegue que iba bien.
+    if (run.getStage() != before) {
+      run.resetAttempts();
     }
     if (run.getStatus() == DeploymentStatus.RUNNING) {
       runs.save(run);
@@ -106,11 +112,11 @@ public class DeploymentOrchestrator {
           + build.get().result() + diagnose(run.getBuildJob(), run.getBuildNumber()));
       return;
     }
-    // El build publica la imagen en Harbor: su última etiqueta es la VERSION a desplegar.
-    final Optional<String> version = harborClient.latestTag(run.getService());
+    // Qué imagen publicó ESTE build. No vale "la última de Harbor": ver ImageVersionResolver.
+    final Optional<String> version = imageVersionResolver.resolve(run);
     if (version.isEmpty()) {
-      finishFailure(run, "el build fue bien pero no encontré la imagen de "
-          + run.getService() + " en Harbor");
+      finishFailure(run, "el build fue bien pero no pude averiguar con qué versión quedó la imagen "
+          + "de " + run.getService());
       return;
     }
     run.setImageVersion(version.get());
