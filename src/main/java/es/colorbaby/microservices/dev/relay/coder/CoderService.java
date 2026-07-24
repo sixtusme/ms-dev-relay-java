@@ -246,11 +246,17 @@ public class CoderService {
     return promptShield.wrap("tarea de Jira", body);
   }
 
+  /**
+   * Recorta un fichero de contexto quedándose con el PRINCIPIO. Venía quedándose con el final, que
+   * es lo correcto para una consola de Jenkins (de donde salió este código) pero justo lo contrario
+   * para código fuente: al recortar por delante se perdían el package, los imports y la declaración
+   * de la clase, que es lo que más le dice al modelo sobre el fichero que está leyendo.
+   */
   private static String truncate(final String value, final int max) {
     if (value == null) {
       return "";
     }
-    return value.length() <= max ? value : value.substring(value.length() - max);
+    return value.length() <= max ? value : value.substring(0, max);
   }
 
   private static String paths(final ChangeSet changeSet) {
