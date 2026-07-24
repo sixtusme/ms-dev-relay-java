@@ -13,6 +13,9 @@ public final class LlmRoles {
   /** Elegir en qué repos abrir PR ({@code RepoSelector}). */
   public static final String SELECTOR = "selector";
 
+  /** Interpretar la intención de un comando {@code /sixai} (salida acotada al catálogo). */
+  public static final String ROUTER = "router";
+
   /** Planner del run de entrega (siguiente acción). Reservado para el bucle de auto-reparación. */
   public static final String PLANNER = "planner";
 

@@ -22,7 +22,10 @@ public class AsyncConfig {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
     executor.setCorePoolSize(2);
     executor.setMaxPoolSize(8);
-    executor.setQueueCapacity(500);
+    // OJO: un ThreadPoolExecutor solo crea hilos por encima del core CUANDO LA COLA SE LLENA. Con
+    // una cola de 500 nunca se llenaba, así que el maxPoolSize era papel mojado y solo trabajaban
+    // 2 hilos. Con la cola corta, una ráfaga de tareas sí escala hasta 8 (que es lo que se quería).
+    executor.setQueueCapacity(10);
     executor.setThreadNamePrefix("jira-proc-");
     // Si la cola se llena, el trabajo se ejecuta en el hilo llamante
     // (backpressure) en vez de descartarse.
