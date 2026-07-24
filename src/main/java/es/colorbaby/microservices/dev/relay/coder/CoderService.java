@@ -200,15 +200,29 @@ public class CoderService {
         ? FileChange.ChangeType.CREATE : FileChange.ChangeType.UPDATE;
   }
 
+  /**
+   * Escribe todos los cambios en UN commit. Antes iba fichero a fichero, y eso tenía un problema
+   * feo: si fallaba el tercero de cinco, la rama se quedaba a medias y la PR enseñaba un cambio
+   * incoherente, que ni compila ni se puede revisar. Los cambios de una tarea son una unidad, así
+   * que o entran todos o no entra ninguno.
+   */
   private void apply(final String repo, final String branch, final ChangeSet changeSet,
       final String issueKey) {
+    final Map<String, String> files = new LinkedHashMap<>();
     for (final FileChange change : changeSet.changes()) {
-      final Optional<GithubClient.FileContent> current =
-          githubClient.getFileContent(repo, branch, change.path());
-      final String sha = current.map(GithubClient.FileContent::sha).orElse(null);
-      final String message = properties.getCommitMessagePrefix() + issueKey + " · " + change.path();
-      githubClient.putFile(repo, branch, change.path(), change.content(), message, sha);
+      files.put(change.path(), change.content());
     }
+    final String summary = changeSet.summary();
+    final String message = properties.getCommitMessagePrefix() + issueKey
+        + (summary == null || summary.isBlank() ? "" : " · " + firstLine(summary));
+    githubClient.commitFiles(repo, branch, files, message);
+  }
+
+  /** El resumen del modelo puede venir en varias líneas; en el asunto del commit solo cabe una. */
+  private static String firstLine(final String value) {
+    final int newLine = value.indexOf('\n');
+    final String line = (newLine < 0 ? value : value.substring(0, newLine)).strip();
+    return line.length() <= 120 ? line : line.substring(0, 120);
   }
 
   /**
