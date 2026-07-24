@@ -45,6 +45,15 @@ public enum TaskEventType {
   /** Se ha promocionado a producción (merge develop → main). */
   PROMOTED,
 
+  /** Alguien ha pedido una corrección, o un fallo la ha disparado. */
+  CORRECTION_REQUESTED,
+
+  /** Ha arrancado un ciclo de corrección (PR nueva con los cambios pedidos). */
+  CORRECTION_STARTED,
+
+  /** Se agotaron los ciclos de corrección: sixai para y escala a una persona. */
+  GAVE_UP,
+
   /** Algo falló y se abortó. */
   FAILED
 }

@@ -55,6 +55,38 @@
       <artifactId>caffeine</artifactId>
       <version>3.1.8</version>
     </dependency>
+    <!-- Persistencia: el estado de los despliegues y los comandos atendidos NO puede vivir en
+         memoria (un reinicio a mitad de una promoción a PROD dejaría la tarea colgada). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.mariadb.jdbc</groupId>
+      <artifactId>mariadb-java-client</artifactId>
+      <version>3.5.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+      <version>10.21.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-mysql</artifactId>
+      <version>10.21.0</version>
+    </dependency>
+    <!-- Informes en FTP/SFTP. Mismas librerías que ms-aduana-java, que ya trabaja con ambos. -->
+    <dependency>
+      <groupId>commons-net</groupId>
+      <artifactId>commons-net</artifactId>
+      <version>3.11.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.mwiede</groupId>
+      <artifactId>jsch</artifactId>
+      <version>0.2.22</version>
+    </dependency>
   </dependencies>
 
   <build>

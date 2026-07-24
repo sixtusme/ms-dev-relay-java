@@ -12,4 +12,7 @@ public interface TaskRunRepository extends JpaRepository<TaskRun, Long> {
 
   /** Historial de una issue, de más reciente a más antigua. */
   List<TaskRun> findByIssueKeyOrderByStartedAtDesc(String issueKey);
+
+  /** Tareas en un estado dado, de más reciente a más antigua: lo que pinta el panel de en curso. */
+  List<TaskRun> findByStatusOrderByStartedAtDesc(String status);
 }

@@ -1,0 +1,32 @@
+services:
+  mariadb:
+    image: mariadb:11.2
+    container_name: mariadb-sixai
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_DATABASE: sixai
+      MARIADB_USER: developer
+      MARIADB_PASSWORD: devpassword
+    # 3309 a propósito: en esta máquina 3307 es la MariaDB de users-java y 3308 lo ocupa un mysqld
+    # NATIVO de Windows. Si se usa un puerto ocupado, el driver conecta contra ESE servidor y el
+    # error que sale es incomprensible (pide auth_gssapi_client y revienta con un Win32Exception de
+    # JNA), como si fuera un fallo del driver. Antes de cambiar el puerto, comprueba que está libre.
+    ports:
+      - "3309:3306"
+    volumes:
+      - mariadb_sixai_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+      --max-connections=200
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+volumes:
+  mariadb_sixai_data:
+    driver: local
