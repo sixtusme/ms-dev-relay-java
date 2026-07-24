@@ -6,9 +6,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.colorbaby.microservices.dev.relay.config.CoderProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.github.client.GithubClient;
+import es.colorbaby.microservices.dev.relay.guardrail.ChangeSetGuard;
+import es.colorbaby.microservices.dev.relay.guardrail.PromptShield;
 import es.colorbaby.microservices.dev.relay.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
 import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
+import es.colorbaby.microservices.dev.relay.llm.LlmTruncatedException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,6 +57,8 @@ public class CoderService {
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
   private final CoderProperties properties;
+  private final ChangeSetGuard changeSetGuard;
+  private final PromptShield promptShield;
   private final ObjectMapper objectMapper;
 
   /**
@@ -66,9 +71,16 @@ public class CoderService {
       return false;
     }
     try {
-      final ChangeSet changeSet = generate(issueKey, repo, branch, summary, description);
+      final ChangeSet proposed = generate(issueKey, repo, branch, summary, description);
+      // Nada de lo que devuelve el modelo se escribe sin pasar por el guardarraíl: hay rutas (la
+      // CI, el material criptográfico) donde un cambio deja de ser código y pasa a ser un problema.
+      final ChangeSetGuard.Result guarded = changeSetGuard.filter(proposed);
+      if (guarded.hasRejections()) {
+        log.warn("Cambios bloqueados en {} para {}: {}", repo, issueKey, guarded.rejected());
+      }
+      final ChangeSet changeSet = guarded.allowed();
       if (changeSet.isEmpty()) {
-        log.info("El coder no propuso cambios para {} en {}", issueKey, repo);
+        log.info("El coder no propuso cambios aplicables para {} en {}", issueKey, repo);
         return false;
       }
       if (properties.isDryRun()) {
@@ -79,6 +91,13 @@ public class CoderService {
       final int n = changeSet.changes().size();
       log.info("Coder commiteó {} fichero(s) en {} para {}", n, repo, issueKey);
       return true;
+    } catch (LlmTruncatedException e) {
+      // Se distingue del resto a propósito: aquí el modelo SÍ estaba escribiendo la solución y se
+      // le acabó el techo. Confundirlo con "no propuso nada" es lo que hacía que el coder pareciera
+      // inútil cuando en realidad estaba mal configurado.
+      log.error("El coder se quedó sin tokens en {} para {} y su propuesta se perdió. {}",
+          repo, issueKey, e.getMessage());
+      return false;
     } catch (RuntimeException e) {
       log.warn("El coder falló en {} para {}: {}", repo, issueKey, e.getMessage());
       return false;
@@ -192,8 +211,12 @@ public class CoderService {
     }
   }
 
+  /**
+   * Las dos pasadas del coder devuelven JSON, así que exigen respuesta COMPLETA: media respuesta no
+   * parsea, y sin exigirlo el corte se confundiría con "el modelo no propuso nada".
+   */
   private String complete(final String system, final String user, final String issueKey) {
-    return llmClient.complete(LlmRequest.of(system, user, LlmRoles.CODER, issueKey));
+    return llmClient.complete(LlmRequest.ofComplete(system, user, LlmRoles.CODER, issueKey));
   }
 
   private JsonNode parse(final String output) {
@@ -213,9 +236,14 @@ public class CoderService {
     }
   }
 
-  private static String task(final String summary, final String description) {
-    return "Título: " + (summary == null ? "" : summary) + "\n\nDescripción:\n"
+  /**
+   * El título y la descripción los escribe una persona en Jira: son contenido externo, así que se
+   * marcan como dato y no como instrucciones para el coder.
+   */
+  private String task(final String summary, final String description) {
+    final String body = "Título: " + (summary == null ? "" : summary) + "\n\nDescripción:\n"
         + (description == null || description.isBlank() ? "(sin descripción)" : description);
+    return promptShield.wrap("tarea de Jira", body);
   }
 
   private static String truncate(final String value, final int max) {
