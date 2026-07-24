@@ -1,0 +1,27 @@
+type: object
+description: >
+  Un adjunto de una tarea de Jira. sixai los copia a la carpeta de informes de la tarea, para
+  tener junto al informe lo que aportó quien la creó (capturas, .txt, etc.).
+properties:
+  id:
+    type: string
+    example: "10501"
+  filename:
+    type: string
+    example: "captura-error.png"
+  mimeType:
+    type: string
+    example: "image/png"
+  size:
+    type: integer
+    format: int64
+    example: 154321
+  content:
+    type: string
+    description: >
+      URL de descarga del adjunto. Requiere la misma autenticación que el resto del API de Jira,
+      así que hay que bajarlo con el cliente autenticado, no con una petición anónima.
+    example: "https://colorbaby.atlassian.net/rest/api/3/attachment/content/10501"
+  created:
+    type: string
+    format: date-time

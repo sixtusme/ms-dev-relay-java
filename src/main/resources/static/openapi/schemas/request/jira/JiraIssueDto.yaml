@@ -38,6 +38,13 @@ properties:
         items:
           type: string
         example: ["backend", "api"]
+      attachment:
+        type: array
+        description: >
+          Adjuntos de la tarea (Jira los devuelve en fields.attachment). sixai los copia a la
+          carpeta de informes de la tarea, junto al informe que genera.
+        items:
+          $ref: "./JiraAttachmentDto.yaml"
       parent:
         type: object
         description: >
