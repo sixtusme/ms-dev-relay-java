@@ -90,19 +90,21 @@ maestro:
     provider: ${MAESTRO_LLM_PROVIDER:openai-compatible}   # openai-compatible (Ollama, OpenAI…) | anthropic (futuro)
     base-url: ${MAESTRO_LLM_BASE_URL:http://localhost:11434/v1}   # Ollama local por defecto
     model: "${MAESTRO_LLM_MODEL:qwen3:8b}"                 # por defecto y de reserva (instalado en el SSD)
-    # Modelo por rol lógico. Estos son los que hay en Ollama, servidos desde el SSD (OLLAMA_MODELS=
-    # Z:\Ollama\models). El criterio: al coder el mejor de código, a diagnose/planner los de
-    # razonamiento, a router/selector uno pequeño y rápido (además tienen fallback por palabras clave)
-    # y al responder uno multilingüe para el comentario en Jira. Si mañana hay un GATEWAY DE MODELOS
-    # (LiteLLM) delante, se cambian estos nombres y ya está. Comillas por los ':' del nombre del modelo.
-    # Detalle en /ai/gateway-de-modelos.
+    # Modelo por rol lógico. Son los que hay en Ollama, servidos desde el SSD. El criterio: a cada
+    # rol lo que necesita, PERO limitado por la RAM de este equipo (16 GB, sin GPU): solo caben
+    # modelos de hasta ~8B. Por eso NO se usan aquí deepseek-r1:14b (denso, hace OOM) ni
+    # deepseek-coder-v2 (8,3 GB, va al límite); quedan en el SSD para cuando haya más RAM o GPU.
+    # coder -> qwen2.5-coder:7b, diagnose/planner -> qwen3:8b, responder -> aya-expanse (multilingüe,
+    # español para Jira), router/selector -> qwen2.5:3b (pequeños; además con fallback por keywords).
+    # Con un GATEWAY DE MODELOS (LiteLLM) delante, se cambian estos nombres por remotos y ya está.
+    # Comillas por los ':' del tag. Detalle en /ai/gateway-de-modelos y /ai/modelos-en-local-y-ssd.
     models:
       responder: "${MAESTRO_LLM_MODEL_RESPONDER:aya-expanse:8b}"       # multilingüe, buen español (Jira)
       selector:  "${MAESTRO_LLM_MODEL_SELECTOR:qwen2.5:3b}"            # pequeño: elige repos de una lista
       router:    "${MAESTRO_LLM_MODEL_ROUTER:qwen2.5:3b}"              # pequeño: intención del comando
       planner:   "${MAESTRO_LLM_MODEL_PLANNER:qwen3:8b}"              # planifica la siguiente acción
-      coder:     "${MAESTRO_LLM_MODEL_CODER:deepseek-coder-v2:latest}" # el mejor de código
-      diagnose:  "${MAESTRO_LLM_MODEL_DIAGNOSE:deepseek-r1:14b}"       # razonamiento para logs de fallo
+      coder:     "${MAESTRO_LLM_MODEL_CODER:qwen2.5-coder:7b}"        # código; cabe en 16 GB con holgura
+      diagnose:  "${MAESTRO_LLM_MODEL_DIAGNOSE:qwen3:8b}"            # razonamiento; el r1:14b hace OOM en 16 GB
     api-key: ${MAESTRO_LLM_API_KEY:}                       # vacío para Ollama; el token del proveedor/gateway cloud
     temperature: ${MAESTRO_LLM_TEMPERATURE:0.4}
     max-tokens: ${MAESTRO_LLM_MAX_TOKENS:1024}               # para los roles que no tengan el suyo
