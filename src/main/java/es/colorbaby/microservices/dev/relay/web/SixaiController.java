@@ -54,7 +54,7 @@ public class SixaiController {
 
   /** El avance de una tarea al detalle: línea de tiempo completa y despliegues. */
   @GetMapping("/tasks/{issueKey}")
-  public ResponseEntity<TaskDetailDto> taskDetail(@PathVariable final String issueKey) {
+  public ResponseEntity<TaskDetailDto> taskDetail(@PathVariable("issueKey") final String issueKey) {
     return taskMonitorService.detail(issueKey)
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
@@ -74,7 +74,7 @@ public class SixaiController {
    * se ve en la línea de tiempo de la tarea.
    */
   @PostMapping("/issues/{issueKey}/approve")
-  public ResponseEntity<Void> approve(@PathVariable final String issueKey,
+  public ResponseEntity<Void> approve(@PathVariable("issueKey") final String issueKey,
       @RequestHeader(value = "X-Username", required = false) final String approvedBy) {
     approvalService.approve(issueKey, approvedBy);
     return ResponseEntity.accepted().build();
@@ -87,13 +87,14 @@ public class SixaiController {
    * @param issueKey si se indica, solo los de esa tarea
    */
   @GetMapping("/reports")
-  public List<ReportDto> reports(@RequestParam(required = false) final String issueKey) {
+  public List<ReportDto> reports(
+      @RequestParam(value = "issueKey", required = false) final String issueKey) {
     return reportQueryService.list(issueKey);
   }
 
   /** Contenido de un informe (markdown en texto plano). */
   @GetMapping(value = "/reports/{id}/content", produces = MediaType.TEXT_PLAIN_VALUE)
-  public ResponseEntity<String> reportContent(@PathVariable final Long id) {
+  public ResponseEntity<String> reportContent(@PathVariable("id") final Long id) {
     return reportQueryService.content(id)
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
@@ -127,7 +128,8 @@ public class SixaiController {
 
   /** Historial del chat de una tarea. */
   @GetMapping("/chat")
-  public List<ChatMessageDto> chatHistory(@RequestParam(required = false) final String issueKey) {
+  public List<ChatMessageDto> chatHistory(
+      @RequestParam(value = "issueKey", required = false) final String issueKey) {
     return chatService.history(issueKey).stream()
         .map(m -> new ChatMessageDto(m.getRole(), m.getContent(), m.getCreatedAt().toString()))
         .toList();
