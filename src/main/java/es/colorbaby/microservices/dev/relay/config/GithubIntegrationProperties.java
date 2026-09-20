@@ -30,7 +30,7 @@ public class GithubIntegrationProperties {
   /**
    * Mapeo de sistema a repos candidatos. Se recorre en orden; el primer sistema cuya palabra clave
    * aparezca en el nombre de la épica, el título, la clave de la issue o las labels aporta sus repos
-   * candidatos. Cuál de esos candidatos hay que tocar de verdad lo decide {@code RepoSelector}.
+   * candidatos. Cuál de esos candidatos hay que tocar de verdad lo decide {@code SelectorAgent}.
    */
   private List<Project> projects = List.of();
 

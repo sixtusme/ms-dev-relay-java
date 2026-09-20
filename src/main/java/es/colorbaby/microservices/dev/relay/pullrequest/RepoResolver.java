@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
  * Decide a qué SISTEMA pertenece una tarea, y con ello sus repos candidatos. Cruza la clave de la
  * issue, el título, el nombre de la épica y las labels contra las palabras clave de
  * {@code maestro.github.projects}: el primer sistema que casa aporta sus repos candidatos. Acotar
- * esos candidatos al subconjunto que realmente hay que tocar es cosa de {@link RepoSelector}.
+ * esos candidatos al subconjunto que realmente hay que tocar es cosa de
+ * {@link es.colorbaby.microservices.dev.relay.ai.agent.impl.SelectorAgent}.
  */
 @Component
 @RequiredArgsConstructor

@@ -10,7 +10,7 @@ public final class LlmRoles {
   /** Responder la tarea de Jira (comentario del responder). */
   public static final String RESPONDER = "responder";
 
-  /** Elegir en qué repos abrir PR ({@code RepoSelector}). */
+  /** Elegir en qué repos abrir PR ({@code SelectorAgent}). */
   public static final String SELECTOR = "selector";
 
   /** Interpretar la intención de un comando {@code /sixai} (salida acotada al catálogo). */

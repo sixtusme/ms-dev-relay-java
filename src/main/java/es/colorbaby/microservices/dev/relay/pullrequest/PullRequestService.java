@@ -3,6 +3,7 @@ package es.colorbaby.microservices.dev.relay.pullrequest;
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.ai.agent.impl.CoderAgent;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.SelectorAgent;
 import es.colorbaby.microservices.dev.relay.ai.agent.state.AgentStatus;
 import es.colorbaby.microservices.dev.relay.ai.orchestration.AgentRuntime;
 import es.colorbaby.microservices.dev.relay.ai.orchestration.record.AgentExecutionRequest;
@@ -26,7 +27,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Al poner una tarea en curso, arranca el trabajo en GitHub. {@link RepoResolver} da los repos
- * candidatos del sistema y {@link RepoSelector} acota a los que realmente hay que tocar; por cada
+ * candidatos del sistema y {@link SelectorAgent} acota a los que realmente hay que tocar; por cada
  * uno crea una rama {@code sixai/<ISSUE>-<ts>} desde {@code develop}, deja un commit de arranque y
  * abre una draft-PR hacia {@code develop}. Luego comenta los enlaces en la propia tarea de Jira.
  *
@@ -42,7 +43,7 @@ public class PullRequestService {
   private final GithubClient githubClient;
   private final JiraClient jiraClient;
   private final RepoResolver repoResolver;
-  private final RepoSelector repoSelector;
+  private final SelectorAgent selectorAgent;
   private final AgentRuntime agentRuntime;
   private final TaskRecorder taskRecorder;
   private final ReportService reportService;
@@ -75,7 +76,7 @@ public class PullRequestService {
         log.info("Sin repos mapeados para {} (revisa maestro.github.projects)", issueKey);
         return;
       }
-      List<String> repos = repoSelector.select(issue, candidates);
+      List<String> repos = selectorAgent.select(issue, candidates);
       if (repos.isEmpty()) {
         log.info("Ningún repo seleccionado para {} entre los candidatos", issueKey);
         return;
