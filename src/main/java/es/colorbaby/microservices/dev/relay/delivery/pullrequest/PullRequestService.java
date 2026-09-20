@@ -3,6 +3,8 @@ package es.colorbaby.microservices.dev.relay.delivery.pullrequest;
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.ai.agent.impl.CoderAgent;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.PlannerAgent;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.ReviewerAgent;
 import es.colorbaby.microservices.dev.relay.ai.agent.impl.SelectorAgent;
 import es.colorbaby.microservices.dev.relay.ai.agent.state.AgentStatus;
 import es.colorbaby.microservices.dev.relay.ai.orchestration.AgentRuntime;
@@ -139,9 +141,15 @@ public class PullRequestService {
       try {
         final String base = properties.getBaseBranch();
         githubClient.createBranch(repo, branch, githubClient.getBranchSha(repo, base));
+        // El planner decide el enfoque ANTES de que el coder escriba nada (solo lectura); el coder
+        // lo sigue, pero decide por su cuenta si el planner está apagado o no dejó plan.
+        final String plan = planWithAgent(issueKey, repo, branch, summary, description);
         // El coder intenta implementar la tarea; si no puede (apagado/dry-run/sin cambios/fallo),
         // se deja el placeholder para que la PR tenga al menos un commit que la sostenga.
-        final boolean coded = codeWithAgent(issueKey, repo, branch, summary, description);
+        final AgentExecutionResult coderResult =
+            codeWithAgent(issueKey, repo, branch, summary, description, plan);
+        final boolean coded = coderResult.status() == AgentStatus.COMPLETED
+            && coderResult.summary() != null && !coderResult.summary().isBlank();
         if (!coded) {
           githubClient.putFile(repo, branch, ".sixai/" + issueKey + ".md",
               placeholder, "chore(sixai): arranque de " + issueKey);
@@ -156,6 +164,9 @@ public class PullRequestService {
           taskRecorder.record(issueKey, TaskEventType.CODE_GENERATED, "sixai", repo);
           codedRepos.add("- **" + repo + "** — PR [#" + pr.number() + "](" + pr.url() + "), rama `"
               + branch + "` → `" + base + "`");
+          // El reviewer solo lee lo que el coder ya commiteó; su veredicto es una opinión más
+          // para quien apruebe, nunca un bloqueo.
+          reviewWithAgent(issueKey, repo, branch, summary, description, coderResult, pr.number());
         }
         // Se manda compilar la rama YA, para que cuando alguien mire la PR sepa si se sostiene.
         // El veredicto tarda unos minutos y llega solo, a la tarea y al panel.
@@ -173,17 +184,58 @@ public class PullRequestService {
   }
 
   /**
-   * Pide al {@link CoderAgent}, vía {@link AgentRuntime}, que implemente la tarea en la rama.
-   * True si commiteó algo; false si está apagado, en dry-run, no propuso nada aplicable o falló
-   * (el llamante cae entonces al placeholder).
+   * Pide al {@link PlannerAgent}, vía {@link AgentRuntime}, un plan de implementación (solo
+   * lectura). Vacío si está apagado, no dejó plan o falló — el coder decide por su cuenta en ese
+   * caso, igual que antes de que existiera el planner.
    */
-  private boolean codeWithAgent(final String issueKey, final String repo, final String branch,
+  private String planWithAgent(final String issueKey, final String repo, final String branch,
       final String summary, final String description) {
     final AgentExecutionResult result = agentRuntime.execute(new AgentExecutionRequest(
-        issueKey, summary, description, CoderAgent.ID,
+        issueKey, summary, description, PlannerAgent.ID,
         Map.of("repo", repo, "branch", branch)));
-    return result.status() == AgentStatus.COMPLETED
-        && result.summary() != null && !result.summary().isBlank();
+    return result.status() == AgentStatus.COMPLETED && result.summary() != null
+        ? result.summary() : "";
+  }
+
+  /**
+   * Pide al {@link CoderAgent}, vía {@link AgentRuntime}, que implemente la tarea en la rama.
+   * Devuelve el resultado completo (no solo si commiteó) porque lleva en {@code data()} las rutas
+   * cambiadas, que necesita el reviewer.
+   */
+  private AgentExecutionResult codeWithAgent(final String issueKey, final String repo,
+      final String branch, final String summary, final String description, final String plan) {
+    return agentRuntime.execute(new AgentExecutionRequest(
+        issueKey, summary, description, CoderAgent.ID,
+        Map.of("repo", repo, "branch", branch, "plan", plan)));
+  }
+
+  /**
+   * Pide al {@link ReviewerAgent}, vía {@link AgentRuntime}, un veredicto sobre lo que el coder
+   * acaba de commitear, y lo comenta en la tarea junto al número de la PR. Best-effort: un fallo
+   * aquí no afecta a la PR, que ya está abierta.
+   */
+  @SuppressWarnings("unchecked")
+  private void reviewWithAgent(final String issueKey, final String repo, final String branch,
+      final String summary, final String description, final AgentExecutionResult coderResult,
+      final int prNumber) {
+    final Object changedFiles = coderResult.data().get("changedFiles");
+    if (!(changedFiles instanceof List<?> paths) || paths.isEmpty()) {
+      return;
+    }
+    try {
+      final String codeSummary = coderResult.summary() == null ? "" : coderResult.summary();
+      final AgentExecutionResult result = agentRuntime.execute(new AgentExecutionRequest(
+          issueKey, summary, description, ReviewerAgent.ID,
+          Map.of("repo", repo, "branch", branch, "changedFiles", (List<String>) paths,
+              "codeSummary", codeSummary)));
+      if (result.status() == AgentStatus.COMPLETED && result.summary() != null
+          && !result.summary().isBlank()) {
+        jiraClient.addComment(issueKey, "🔍 Revisión automática de " + repo + " (PR #" + prNumber
+            + "):\n\n" + result.summary());
+      }
+    } catch (RuntimeException e) {
+      log.warn("El reviewer falló en {} para {}: {}", repo, issueKey, e.getMessage());
+    }
   }
 
   /** El informe que se publica en la carpeta de la tarea cuando el coder ha resuelto algo. */

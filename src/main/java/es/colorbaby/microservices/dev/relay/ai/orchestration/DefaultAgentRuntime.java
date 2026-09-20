@@ -81,7 +81,7 @@ public class DefaultAgentRuntime implements AgentRuntime {
 
     return switch (result.status()) {
       case COMPLETED, FAILED, NEEDS_INPUT ->
-          new AgentExecutionResult(context.executionId(), result.status(), result.message());
+          new AgentExecutionResult(context.executionId(), result.status(), result.message(), result.data());
       case WAITING_FOR_TOOL -> {
         applyToolActions(agent, context, result.actions());
         yield run(agent, context, stepsLeft - 1);
