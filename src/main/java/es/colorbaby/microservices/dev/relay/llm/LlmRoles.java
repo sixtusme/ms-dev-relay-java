@@ -28,6 +28,9 @@ public final class LlmRoles {
   /** Embeddings para indexar y consultar el Knowledge (retrieval semántico). */
   public static final String EMBEDDING = "embedding";
 
+  /** Revisar la calidad del ChangeSet que acaba de commitear el coder ({@code ReviewerAgent}). */
+  public static final String REVIEWER = "reviewer";
+
   private LlmRoles() {
   }
 }
