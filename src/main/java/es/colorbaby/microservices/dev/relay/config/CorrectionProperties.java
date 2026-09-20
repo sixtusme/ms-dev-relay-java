@@ -1,7 +1,9 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Ciclo de corrección ({@code maestro.correction}): qué hace sixai cuando el cliente dice que algo
@@ -12,6 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * ciclo pasa además por la aprobación humana del front, que es el freno natural.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.correction")
 public class CorrectionProperties {
 
@@ -22,6 +25,7 @@ public class CorrectionProperties {
   private boolean dryRun = true;
 
   /** Ciclos de corrección permitidos por tarea antes de rendirse y escalar. */
+  @Positive
   private int maxCycles = 3;
 
   /** Si un build o despliegue fallido dispara la corrección por su cuenta. */

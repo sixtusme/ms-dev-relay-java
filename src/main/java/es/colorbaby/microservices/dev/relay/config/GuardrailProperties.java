@@ -1,8 +1,10 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.Positive;
 import java.util.List;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Guardarraíles de entrada y salida del modelo ({@code maestro.guardrails}).
@@ -20,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * coder se validan antes de escribir nada.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.guardrails")
 public class GuardrailProperties {
 
@@ -44,8 +47,10 @@ public class GuardrailProperties {
       ".pem", ".key", ".p12", ".jks", "id_rsa", "id_ed25519", "credentials");
 
   /** Tamaño máximo por fichero que el coder puede escribir. */
+  @Positive
   private int maxFileBytes = 200_000;
 
   /** Máximo de caracteres de un texto no confiable que se le pasa al modelo. */
+  @Positive
   private int maxUntrustedChars = 20_000;
 }

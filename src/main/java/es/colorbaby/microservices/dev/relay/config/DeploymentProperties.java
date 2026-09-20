@@ -1,11 +1,16 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Cómo despliega sixai ({@code maestro.deploy}), calcado del pipeline real de Colorbaby: build y
@@ -22,6 +27,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Dinahosting y usa <b>otro job</b> ({@code deploy_dinahosting_pipeline}), no solo otro entorno.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.deploy")
 public class DeploymentProperties {
 
@@ -32,12 +38,14 @@ public class DeploymentProperties {
   private boolean dryRun = true;
 
   /** Job de despliegue por defecto. */
+  @NotBlank
   private String deployJob = "job/deploy_pipeline";
 
   /** Job de build por tipo de pipeline: {@code back}, {@code front}, {@code library}. */
   private Map<String, String> buildJobs = new HashMap<>();
 
   /** Intervalo del orquestador (ms). Es el {@code fixedDelay} del barrido. */
+  @Positive
   private long pollIntervalMs = 30000;
 
   /**
@@ -46,15 +54,18 @@ public class DeploymentProperties {
    * todo junto: como presupuesto único se quedaba corto en cuanto el servicio era grande, y un
    * despliegue que iba bien se marcaba como agotado.
    */
+  @Positive
   private int maxAttempts = 60;
 
   /** Si al fallar un job se pide al LLM un diagnóstico de la consola. */
   private boolean diagnoseOnFailure = true;
 
   /** Máximo de caracteres (cola) de la consola que se mandan al LLM para diagnosticar. */
+  @Positive
   private int consoleMaxChars = 12000;
 
   /** Repos desplegables. Un repo que no esté aquí, sixai no lo despliega (y lo dice). */
+  @Valid
   private List<Repo> repos = List.of();
 
   /** Configuración de despliegue de un repo. */
@@ -62,9 +73,11 @@ public class DeploymentProperties {
   public static class Repo {
 
     /** Nombre del repo en GitHub. */
+    @NotBlank
     private String name;
 
     /** Tipo de pipeline de build: {@code back}, {@code front} o {@code library}. */
+    @Pattern(regexp = "back|front|library")
     private String pipeline = "back";
 
     /** Nombre del servicio en Harbor/Ansible. Si se omite, se usa {@code name}. */

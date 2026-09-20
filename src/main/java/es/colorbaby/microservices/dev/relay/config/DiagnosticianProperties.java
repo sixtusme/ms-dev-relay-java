@@ -1,10 +1,12 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.Positive;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Diagnóstico de despliegues fallidos ({@code maestro.diagnostician}). Cuando un despliegue se
@@ -15,6 +17,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * fija ({@code fixed_target_host}).
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.diagnostician")
 public class DiagnosticianProperties {
 
@@ -28,6 +31,7 @@ public class DiagnosticianProperties {
   private boolean readContainerLogs = true;
 
   /** Líneas de log del contenedor que se recogen. */
+  @Positive
   private int logLines = 200;
 
   /**

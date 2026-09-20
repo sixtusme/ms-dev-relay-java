@@ -1,7 +1,13 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Dónde viven los informes de sixai ({@code maestro.reports}). Se reutiliza el FTP/SFTP que ya hay
@@ -11,6 +17,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * se elige con {@code protocol} y el resto de propiedades son las mismas.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.reports")
 public class ReportStorageProperties {
 
@@ -18,10 +25,14 @@ public class ReportStorageProperties {
   private boolean enabled = false;
 
   /** Protocolo: {@code sftp} o {@code ftp}. */
+  @Pattern(regexp = "sftp|ftp")
   private String protocol = "sftp";
 
+  @NotBlank
   private String host = "localhost";
 
+  @Min(1)
+  @Max(65535)
   private int port = 22;
 
   private String username = "";
@@ -31,8 +42,10 @@ public class ReportStorageProperties {
   /** Carpeta raíz de los informes; dentro se crea una carpeta por tarea. */
   private String baseDirectory = "/reports";
 
+  @Positive
   private int connectTimeoutMs = 10000;
 
+  @Positive
   private int readTimeoutMs = 60000;
 
   /** Ruta a la clave privada para SFTP con clave (opcional). */

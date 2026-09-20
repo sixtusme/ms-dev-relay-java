@@ -1,11 +1,15 @@
 package es.colorbaby.microservices.dev.relay.config;
 
 import es.colorbaby.microservices.dev.relay.ai.llm.LlmRoles;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Configuración del LLM ({@code maestro.llm} de application.yml).
@@ -15,6 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * {@code api-key}.
  */
 @ConfigurationProperties(prefix = "maestro.llm")
+@Validated
 @Getter
 @Setter
 public class LlmProperties {
@@ -45,9 +50,12 @@ public class LlmProperties {
   private String apiKey = "";
 
   /** Creatividad de la respuesta (0 = determinista). */
+  @Min(0)
+  @Max(2)
   private double temperature = 0.4;
 
   /** Tope de tokens de la respuesta, para los roles que no tengan el suyo. */
+  @Positive
   private int maxTokens = 1024;
 
   /**
@@ -63,9 +71,11 @@ public class LlmProperties {
   private Map<String, Integer> maxTokensByRole = new HashMap<>(Map.of(LlmRoles.CODER, 16000));
 
   /** Timeout de conexión. */
+  @Positive
   private int connectTimeoutMs = 5000;
 
   /** Timeout de lectura por defecto. Amplio: los modelos locales tardan. */
+  @Positive
   private int readTimeoutMs = 120000;
 
   /**
@@ -85,12 +95,16 @@ public class LlmProperties {
    * Porcentaje de fallos a partir del cual se cortan las llamadas al modelo. Con el cortocircuito
    * abierto, todo lo que usa el LLM degrada a su alternativa en vez de quedarse esperando.
    */
+  @Min(0)
+  @Max(100)
   private int circuitFailureRateThreshold = 50;
 
   /** Llamadas mínimas antes de que el cortocircuito pueda abrirse (evita abrir por un fallo suelto). */
+  @Positive
   private int circuitMinimumCalls = 5;
 
   /** Segundos que el cortocircuito permanece abierto antes de volver a probar. */
+  @Positive
   private int circuitOpenSeconds = 60;
 
   /**

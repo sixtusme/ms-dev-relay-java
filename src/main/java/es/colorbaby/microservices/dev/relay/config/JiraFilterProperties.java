@@ -1,8 +1,10 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Filtro de elegibilidad aplicado por igual a webhook y polling: una tarea
@@ -10,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * comentario con la palabra clave configurada.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.jira.filter")
 public class JiraFilterProperties {
 
@@ -21,6 +24,7 @@ public class JiraFilterProperties {
   /**
    * Palabra clave que debe contener un comentario para disparar el procesamiento.
    */
+  @NotBlank
   private String triggerKeyword = "sixai";
 
   /**

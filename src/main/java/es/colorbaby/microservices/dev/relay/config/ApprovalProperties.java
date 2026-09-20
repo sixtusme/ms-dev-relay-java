@@ -1,7 +1,10 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Compuerta de aprobación → PRE ({@code maestro.approval}). Cuando el front {@code /sixai} aprueba
@@ -10,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * para observar el build de develop.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.approval")
 public class ApprovalProperties {
 
@@ -20,8 +24,10 @@ public class ApprovalProperties {
   private boolean dryRun = true;
 
   /** Estado de Jira al que pasa la tarea tras desplegar a PRE (nombre EXACTO del flujo). */
+  @NotBlank
   private String testStatus = "TEST";
 
   /** Método de merge a develop: {@code merge}, {@code squash} o {@code rebase}. */
+  @Pattern(regexp = "merge|squash|rebase")
   private String mergeMethod = "squash";
 }

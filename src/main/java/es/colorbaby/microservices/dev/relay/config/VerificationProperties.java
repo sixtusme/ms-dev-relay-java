@@ -1,8 +1,10 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Verificación de las PRs antes de aprobarlas ({@code maestro.verification}).
@@ -11,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * generado siquiera compila, y el primer aviso real llegaba en el build de develop, ya mergeado.
  */
 @ConfigurationProperties(prefix = "maestro.verification")
+@Validated
 @Getter
 @Setter
 public class VerificationProperties {
@@ -31,14 +34,17 @@ public class VerificationProperties {
   private boolean blockApproval = false;
 
   /** Intervalo del barrido (ms). */
+  @Positive
   private long pollIntervalMs = 30000;
 
   /** Tope de sondeos por etapa antes de rendirse; se reinicia al pasar de etapa. */
+  @Positive
   private int maxAttempts = 60;
 
   /** Si al fallar la verificación se comenta el diagnóstico del LLM en la PR. */
   private boolean diagnoseOnFailure = true;
 
   /** Cuánta consola se le pasa al modelo para diagnosticar. */
+  @Positive
   private int consoleMaxChars = 8000;
 }

@@ -1,14 +1,18 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Qué hace sixai con GitHub al poner una tarea en curso ({@code maestro.github}). El "cómo hablar
  * con GitHub" (org, token, url) vive en la lib; aquí está el comportamiento.
  */
 @Data
+@Validated
 @ConfigurationProperties(prefix = "maestro.github")
 public class GithubIntegrationProperties {
 
@@ -19,12 +23,14 @@ public class GithubIntegrationProperties {
   private boolean dryRun = true;
 
   /** Prefijo de las ramas que crea sixai (ej. {@code sixai/USA-938-1699999999}). */
+  @NotBlank
   private String branchPrefix = "sixai/";
 
   /**
    * Rama base de las PRs: sixai ramifica desde ella y la PR la apunta a ella. Es {@code develop}
    * (existe en todos los repos). La rama por defecto (main/master) se reserva para PROD.
    */
+  @NotBlank
   private String baseBranch = "develop";
 
   /**
@@ -32,6 +38,7 @@ public class GithubIntegrationProperties {
    * aparezca en el nombre de la épica, el título, la clave de la issue o las labels aporta sus repos
    * candidatos. Cuál de esos candidatos hay que tocar de verdad lo decide {@code SelectorAgent}.
    */
+  @Valid
   private List<Project> projects = List.of();
 
   /** Un sistema y sus repos candidatos. */
@@ -42,6 +49,7 @@ public class GithubIntegrationProperties {
     private List<String> keywords = List.of();
 
     /** Repos candidatos del sistema, cada uno con su rol y keywords de afinado. */
+    @Valid
     private List<Repo> repos = List.of();
   }
 
@@ -50,6 +58,7 @@ public class GithubIntegrationProperties {
   public static class Repo {
 
     /** Nombre del repo (sin la org). */
+    @NotBlank
     private String name;
 
     /** Rol del repo; pista para que el LLM y las personas sepan qué contiene (ej. "frontend/UI"). */
