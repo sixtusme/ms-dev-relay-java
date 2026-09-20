@@ -1,7 +1,7 @@
 package es.colorbaby.microservices.dev.relay.guardrail;
 
-import es.colorbaby.microservices.dev.relay.coder.ChangeSet;
-import es.colorbaby.microservices.dev.relay.coder.FileChange;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.ChangeSet;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.FileChange;
 import es.colorbaby.microservices.dev.relay.config.GuardrailProperties;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

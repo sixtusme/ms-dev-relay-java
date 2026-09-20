@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.ai.tool.impl;
+package es.colorbaby.microservices.dev.relay.ai.tool.impl.jira;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

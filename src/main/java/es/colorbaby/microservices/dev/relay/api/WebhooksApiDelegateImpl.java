@@ -1,10 +1,10 @@
 package es.colorbaby.microservices.dev.relay.api;
 
 import es.colorbaby.microservices.dev.relay.config.JiraSyncProperties;
-import es.colorbaby.microservices.dev.relay.event.TriggerSource;
+import es.colorbaby.microservices.dev.relay.intake.IssueTriggerService;
+import es.colorbaby.microservices.dev.relay.intake.TriggerSource;
 import es.colorbaby.microservices.dev.relay.openapi.api.WebhooksApiDelegate;
 import es.colorbaby.microservices.dev.relay.openapi.model.RequestJiraWebhookEventDto;
-import es.colorbaby.microservices.dev.relay.service.IssueTriggerService;
 import es.colorbaby.microservices.essential.common.exceptions.InvalidCredentialsException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;

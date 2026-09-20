@@ -1,8 +1,8 @@
 package es.colorbaby.microservices.dev.relay.config;
 
-import es.colorbaby.microservices.dev.relay.report.FtpReportStorage;
-import es.colorbaby.microservices.dev.relay.report.ReportStorage;
-import es.colorbaby.microservices.dev.relay.report.SftpReportStorage;
+import es.colorbaby.microservices.dev.relay.panel.report.FtpReportStorage;
+import es.colorbaby.microservices.dev.relay.panel.report.ReportStorage;
+import es.colorbaby.microservices.dev.relay.panel.report.SftpReportStorage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

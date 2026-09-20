@@ -1,6 +1,6 @@
 package es.colorbaby.microservices.dev.relay.config;
 
-import es.colorbaby.microservices.dev.relay.jira.DryRunJiraClient;
+import es.colorbaby.microservices.dev.relay.intake.DryRunJiraClient;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClientImpl;
 import es.colorbaby.microservices.dev.relay.jira.config.JiraProperties;

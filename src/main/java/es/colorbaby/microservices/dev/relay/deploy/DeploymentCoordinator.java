@@ -4,7 +4,7 @@ import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.config.ApprovalProperties;
-import es.colorbaby.microservices.dev.relay.correction.CorrectionService;
+import es.colorbaby.microservices.dev.relay.control.correction.CorrectionService;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import java.util.List;
 import java.util.stream.Collectors;

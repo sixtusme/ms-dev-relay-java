@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.ai.tool.impl;
+package es.colorbaby.microservices.dev.relay.ai.tool.impl.infra;
 
 import es.colorbaby.microservices.dev.relay.ai.tool.Tool;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolArguments;

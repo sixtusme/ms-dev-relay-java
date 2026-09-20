@@ -13,8 +13,6 @@ import es.colorbaby.microservices.dev.relay.ai.agent.state.AgentStatus;
 import es.colorbaby.microservices.dev.relay.ai.skill.Skill;
 import es.colorbaby.microservices.dev.relay.ai.skill.SkillRegistry;
 import es.colorbaby.microservices.dev.relay.ai.tool.state.ToolStatus;
-import es.colorbaby.microservices.dev.relay.coder.ChangeSet;
-import es.colorbaby.microservices.dev.relay.coder.FileChange;
 import es.colorbaby.microservices.dev.relay.config.CoderProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.guardrail.PromptShield;
@@ -40,7 +38,7 @@ import org.springframework.stereotype.Component;
  * como contexto, devuelve los cambios en JSON — pero ahora el acceso a GitHub es exclusivamente
  * vía tools ({@code github.list_paths}, {@code github.read_file}, {@code github.commit}), y el
  * commit pasa por el {@link es.colorbaby.microservices.dev.relay.ai.orchestration.AgentRuntime},
- * que le aplica {@link es.colorbaby.microservices.dev.relay.ai.tool.impl.ChangeSetToolGuardrail}
+ * que le aplica {@link es.colorbaby.microservices.dev.relay.ai.tool.impl.guardrail.ChangeSetToolGuardrail}
  * de forma genérica.
  *
  * <p>Es una máquina de estados de varios pasos: cada llamada a {@link #execute} avanza un paso
