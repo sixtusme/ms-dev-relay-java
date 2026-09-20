@@ -5,6 +5,7 @@ import es.colorbaby.microservices.dev.relay.activity.LlmCallRepository;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,22 +33,34 @@ public class RecordingLlmClient implements LlmClient {
     final long startedAt = System.currentTimeMillis();
     try {
       final String answer = delegate.complete(request);
-      record(request, startedAt, true, null);
+      record(request.role(), request.metadata().get("issue"), startedAt, true, null);
       return answer;
     } catch (RuntimeException e) {
-      record(request, startedAt, false, e.getMessage());
+      record(request.role(), request.metadata().get("issue"), startedAt, false, e.getMessage());
       throw e;
     }
   }
 
-  private void record(final LlmRequest request, final long startedAt, final boolean success,
-      final String error) {
+  @Override
+  public List<Double> embed(final String text, final String issueKey) {
+    final long startedAt = System.currentTimeMillis();
     try {
-      final String issueKey = request.metadata().get("issue");
+      final List<Double> vector = delegate.embed(text, issueKey);
+      record(LlmRoles.EMBEDDING, issueKey, startedAt, true, null);
+      return vector;
+    } catch (RuntimeException e) {
+      record(LlmRoles.EMBEDDING, issueKey, startedAt, false, e.getMessage());
+      throw e;
+    }
+  }
+
+  private void record(final String role, final String issueKey, final long startedAt,
+      final boolean success, final String error) {
+    try {
       final LlmCall call = new LlmCall();
       call.setIssueKey(issueKey);
-      call.setRole(request.role() == null ? "unknown" : request.role());
-      call.setModel(properties.modelFor(request.role()));
+      call.setRole(role == null ? "unknown" : role);
+      call.setModel(properties.modelFor(role));
       call.setLatencyMs(System.currentTimeMillis() - startedAt);
       call.setSuccess(success);
       call.setError(truncate(error, LlmCall.ERROR_MAX));

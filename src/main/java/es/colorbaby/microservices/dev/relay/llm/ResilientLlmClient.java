@@ -4,6 +4,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import java.time.Duration;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -52,6 +53,16 @@ public class ResilientLlmClient implements LlmClient {
       // El cortocircuito está abierto: se falla YA para que el llamante use su alternativa.
       throw new LlmClientException(
           "El modelo no está respondiendo; llamadas cortadas temporalmente", e);
+    }
+  }
+
+  @Override
+  public List<Double> embed(final String text, final String issueKey) {
+    try {
+      return circuitBreaker.executeSupplier(() -> delegate.embed(text, issueKey));
+    } catch (CallNotPermittedException e) {
+      throw new LlmClientException(
+          "El proveedor de embeddings no está respondiendo; llamadas cortadas temporalmente", e);
     }
   }
 }

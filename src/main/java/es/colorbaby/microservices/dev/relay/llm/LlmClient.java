@@ -1,5 +1,7 @@
 package es.colorbaby.microservices.dev.relay.llm;
 
+import java.util.List;
+
 /**
  * Cliente de un modelo de lenguaje.
  *
@@ -30,5 +32,21 @@ public interface LlmClient {
    */
   default String complete(final String systemPrompt, final String userPrompt) {
     return complete(LlmRequest.of(systemPrompt, userPrompt));
+  }
+
+  /**
+   * Vector de embedding de un texto, para indexar o consultar el {@code Knowledge} (retrieval
+   * semántico). El modelo se resuelve vía {@code maestro.llm.models.embedding}.
+   *
+   * @param text     texto a convertir en vector
+   * @param issueKey tarea a la que se asocia la llamada, para traza/coste; puede ser null
+   * @return el vector de embedding
+   * @throws LlmClientException si el proveedor falla o no devuelve un vector
+   */
+  List<Double> embed(String text, String issueKey);
+
+  /** Atajo sin issueKey (llamada no asociada a ninguna tarea concreta, p. ej. indexar). */
+  default List<Double> embed(final String text) {
+    return embed(text, null);
   }
 }

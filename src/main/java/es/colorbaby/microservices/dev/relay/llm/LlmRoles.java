@@ -25,6 +25,9 @@ public final class LlmRoles {
   /** Diagnóstico de logs de build/deploy. Reservado para el bucle de auto-reparación. */
   public static final String DIAGNOSE = "diagnose";
 
+  /** Embeddings para indexar y consultar el Knowledge (retrieval semántico). */
+  public static final String EMBEDDING = "embedding";
+
   private LlmRoles() {
   }
 }
