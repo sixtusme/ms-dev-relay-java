@@ -11,7 +11,7 @@ import es.colorbaby.microservices.dev.relay.ai.knowledge.record.KnowledgeDocumen
 import es.colorbaby.microservices.dev.relay.ai.knowledge.record.KnowledgeQuery;
 import es.colorbaby.microservices.dev.relay.config.KnowledgeProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
-import es.colorbaby.microservices.dev.relay.llm.LlmClient;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmClient;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;

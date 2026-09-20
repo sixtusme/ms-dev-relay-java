@@ -1,6 +1,6 @@
 package es.colorbaby.microservices.dev.relay.config;
 
-import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmRoles;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
@@ -76,7 +76,7 @@ public class LlmProperties {
    *
    * <p>Un rol sin entrada aquí usa {@code read-timeout-ms}.
    */
-  private Map<String, Integer> readTimeouts = new HashMap<>();
+  private Map<String, Integer> readTimeoutByRole = new HashMap<>();
 
   /** System prompt que define el comportamiento de Sixai. */
   private String systemPrompt = "";
@@ -101,7 +101,7 @@ public class LlmProperties {
    */
   public int readTimeoutFor(final String role) {
     if (role != null && !role.isBlank()) {
-      final Integer specific = readTimeouts.get(role);
+      final Integer specific = readTimeoutByRole.get(role);
       if (specific != null && specific > 0) {
         return specific;
       }

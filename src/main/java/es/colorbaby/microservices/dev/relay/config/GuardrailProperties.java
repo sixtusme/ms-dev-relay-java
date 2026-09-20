@@ -33,7 +33,7 @@ public class GuardrailProperties {
   private boolean shieldPrompts = true;
 
   /** Validar las rutas que propone el coder antes de escribir. */
-  private boolean guardChangeSets = true;
+  private boolean validateChangeSets = true;
 
   /**
    * Rutas que el coder NO puede tocar. Son las que convierten un cambio de código en un problema

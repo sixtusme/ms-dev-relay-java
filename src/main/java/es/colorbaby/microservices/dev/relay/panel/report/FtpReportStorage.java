@@ -93,8 +93,8 @@ public class FtpReportStorage implements ReportStorage {
 
   private <T> T execute(final String what, final Function<FTPClient, T> action) {
     final FTPClient client = new FTPClient();
-    client.setConnectTimeout(properties.getConnectionTimeout());
-    client.setDataTimeout(java.time.Duration.ofMillis(properties.getDataTimeout()));
+    client.setConnectTimeout(properties.getConnectTimeoutMs());
+    client.setDataTimeout(java.time.Duration.ofMillis(properties.getReadTimeoutMs()));
     try {
       client.connect(properties.getHost(), properties.getPort());
       if (!client.login(properties.getUsername(), properties.getPassword())) {

@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.llm;
+package es.colorbaby.microservices.dev.relay.ai.llm;
 
 /**
  * Roles lógicos del LLM en sixai. Cada rol puede enrutarse a un modelo distinto vía

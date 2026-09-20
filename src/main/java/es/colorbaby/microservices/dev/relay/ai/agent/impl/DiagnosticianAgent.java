@@ -14,14 +14,14 @@ import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolArguments;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolContext;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolResult;
 import es.colorbaby.microservices.dev.relay.ai.tool.state.ToolStatus;
-import es.colorbaby.microservices.dev.relay.config.DeployDiagnosisProperties;
+import es.colorbaby.microservices.dev.relay.config.DiagnosticianProperties;
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentRun;
 import es.colorbaby.microservices.dev.relay.harbor.client.HarborClient;
-import es.colorbaby.microservices.dev.relay.llm.LlmClient;
-import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
-import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmClient;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmRequest;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmRoles;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,7 +63,7 @@ public class DiagnosticianAgent implements Agent {
       "Eres Sixai. A partir de la consola de un job de Jenkins que ha fallado, resume en pocas "
       + "frases la causa más probable. No inventes.";
 
-  private final DeployDiagnosisProperties deployDiagnosisProperties;
+  private final DiagnosticianProperties diagnosticianProperties;
   private final DeploymentProperties deploymentProperties;
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
@@ -89,7 +89,7 @@ public class DiagnosticianAgent implements Agent {
    * @return el diagnóstico para añadir al aviso, o vacío si no se pudo elaborar
    */
   public String diagnoseDeployment(final DeploymentRun run, final String reason) {
-    if (!deployDiagnosisProperties.isEnabled()) {
+    if (!diagnosticianProperties.isEnabled()) {
       return "";
     }
     final String evidence = gather(run, reason);
@@ -160,7 +160,7 @@ public class DiagnosticianAgent implements Agent {
 
   /** El gate de Trivy tumba despliegues sin decir qué CVE; aquí es donde se averigua. */
   private void appendHarborScan(final DeploymentRun run, final StringBuilder evidence) {
-    if (!deployDiagnosisProperties.isCheckHarborScan() || run.getImageVersion() == null) {
+    if (!diagnosticianProperties.isCheckHarborScan() || run.getImageVersion() == null) {
       return;
     }
     try {
@@ -187,16 +187,16 @@ public class DiagnosticianAgent implements Agent {
 
   /** Estado y logs del contenedor en el host destino: donde se ve un arranque fallido. */
   private void appendContainer(final DeploymentRun run, final StringBuilder evidence) {
-    if (!deployDiagnosisProperties.isReadContainerLogs()) {
+    if (!diagnosticianProperties.isReadContainerLogs()) {
       return;
     }
-    final Optional<String> host = deployDiagnosisProperties.hostFor(run.getEnvironment());
+    final Optional<String> host = diagnosticianProperties.hostFor(run.getEnvironment());
     if (host.isEmpty()) {
       evidence.append("\n\n(No hay máquina inventariada para el entorno ")
           .append(run.getEnvironment()).append(".)");
       return;
     }
-    final String container = deployDiagnosisProperties.containerFor(run.getService());
+    final String container = diagnosticianProperties.containerFor(run.getService());
     try {
       invokeTool(INFRA_CONTAINER_STATUS, Map.of("host", host.get(), "container", container),
               run.getIssueKey())
@@ -207,7 +207,7 @@ public class DiagnosticianAgent implements Agent {
 
       invokeTool(INFRA_CONTAINER_LOGS,
               Map.of("host", host.get(), "container", container,
-                  "lines", deployDiagnosisProperties.getLogLines()),
+                  "lines", diagnosticianProperties.getLogLines()),
               run.getIssueKey())
           .map(ToolResult::content)
           .filter(logs -> logs != null && !logs.isBlank())

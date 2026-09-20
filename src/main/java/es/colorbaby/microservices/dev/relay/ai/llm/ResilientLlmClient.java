@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.llm;
+package es.colorbaby.microservices.dev.relay.ai.llm;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;

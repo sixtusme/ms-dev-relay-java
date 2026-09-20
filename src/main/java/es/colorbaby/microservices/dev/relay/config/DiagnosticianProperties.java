@@ -7,7 +7,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Diagnóstico de despliegues fallidos ({@code maestro.deploy-diagnosis}). Cuando un despliegue se
+ * Diagnóstico de despliegues fallidos ({@code maestro.diagnostician}). Cuando un despliegue se
  * cae, la consola de Jenkins casi nunca dice por qué: la causa está en el gate de Trivy (Harbor) o
  * en el contenedor que no arranca. Esto le dice a sixai dónde mirar.
  *
@@ -15,8 +15,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * fija ({@code fixed_target_host}).
  */
 @Data
-@ConfigurationProperties(prefix = "maestro.deploy-diagnosis")
-public class DeployDiagnosisProperties {
+@ConfigurationProperties(prefix = "maestro.diagnostician")
+public class DiagnosticianProperties {
 
   /** Interruptor. Con {@code false}, ante un fallo solo se ve la consola de Jenkins. */
   private boolean enabled = false;

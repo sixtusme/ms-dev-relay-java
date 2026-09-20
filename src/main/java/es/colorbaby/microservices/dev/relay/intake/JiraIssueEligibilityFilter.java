@@ -80,7 +80,7 @@ public class JiraIssueEligibilityFilter {
     String keyword = filterProperties.getTriggerKeyword();
     return comments.stream()
         .filter(comment -> containsKeyword(comment, keyword))
-        .filter(comment -> !filterProperties.isCommentAuthorMustBeAssignee()
+        .filter(comment -> !filterProperties.isRequireAssigneeAuthor()
             || isTrustedAuthor(comment.getAuthor(), assignee))
         .findFirst()
         .map(comment -> new EligibilityResult(issue, comment));

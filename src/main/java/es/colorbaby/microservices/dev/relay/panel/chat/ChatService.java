@@ -2,14 +2,13 @@ package es.colorbaby.microservices.dev.relay.panel.chat;
 
 import es.colorbaby.microservices.dev.relay.activity.TaskEvent;
 import es.colorbaby.microservices.dev.relay.activity.TaskEventRepository;
-import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.activity.TaskRunRepository;
 import es.colorbaby.microservices.dev.relay.ai.skill.Skill;
 import es.colorbaby.microservices.dev.relay.ai.skill.SkillRegistry;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
-import es.colorbaby.microservices.dev.relay.llm.LlmClient;
-import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
-import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmClient;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmRequest;
+import es.colorbaby.microservices.dev.relay.ai.llm.LlmRoles;
 import es.colorbaby.microservices.dev.relay.panel.report.Report;
 import es.colorbaby.microservices.dev.relay.panel.report.ReportRepository;
 import java.util.ArrayList;

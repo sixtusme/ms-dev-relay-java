@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.llm;
+package es.colorbaby.microservices.dev.relay.ai.llm;
 
 /**
  * El modelo llegó al tope de tokens y su respuesta salió cortada, en una llamada que exigía

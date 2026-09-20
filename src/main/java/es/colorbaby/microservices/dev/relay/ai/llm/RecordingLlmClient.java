@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.llm;
+package es.colorbaby.microservices.dev.relay.ai.llm;
 
 import es.colorbaby.microservices.dev.relay.activity.LlmCall;
 import es.colorbaby.microservices.dev.relay.activity.LlmCallRepository;

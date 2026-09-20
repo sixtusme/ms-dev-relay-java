@@ -31,9 +31,9 @@ public class ReportStorageProperties {
   /** Carpeta raíz de los informes; dentro se crea una carpeta por tarea. */
   private String baseDirectory = "/reports";
 
-  private int connectionTimeout = 10000;
+  private int connectTimeoutMs = 10000;
 
-  private int dataTimeout = 60000;
+  private int readTimeoutMs = 60000;
 
   /** Ruta a la clave privada para SFTP con clave (opcional). */
   private String privateKeyPath;

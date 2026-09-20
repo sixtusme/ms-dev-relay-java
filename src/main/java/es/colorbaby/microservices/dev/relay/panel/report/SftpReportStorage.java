@@ -106,7 +106,7 @@ public class SftpReportStorage implements ReportStorage {
     try {
       session = openSession();
       channel = (ChannelSftp) session.openChannel("sftp");
-      channel.connect(properties.getConnectionTimeout());
+      channel.connect(properties.getConnectTimeoutMs());
       return action.apply(channel);
     } catch (JSchException e) {
       throw new ReportStorageException("Error " + what, e);
@@ -136,7 +136,7 @@ public class SftpReportStorage implements ReportStorage {
     final Properties config = new Properties();
     config.put("StrictHostKeyChecking", properties.isStrictHostChecking() ? "yes" : "no");
     session.setConfig(config);
-    session.connect(properties.getConnectionTimeout());
+    session.connect(properties.getConnectTimeoutMs());
     return session;
   }
 }

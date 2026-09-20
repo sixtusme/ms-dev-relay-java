@@ -44,7 +44,7 @@ public class ChangeSetGuard {
 
   /** Deja solo los cambios admisibles. */
   public Result filter(final ChangeSet changeSet) {
-    if (!properties.isEnabled() || !properties.isGuardChangeSets()) {
+    if (!properties.isEnabled() || !properties.isValidateChangeSets()) {
       return new Result(changeSet, List.of());
     }
     final List<FileChange> allowed = new ArrayList<>();

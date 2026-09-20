@@ -1,4 +1,4 @@
-package es.colorbaby.microservices.dev.relay.llm;
+package es.colorbaby.microservices.dev.relay.ai.llm;
 
 /** Error al llamar al proveedor de LLM. */
 public class LlmClientException extends RuntimeException {

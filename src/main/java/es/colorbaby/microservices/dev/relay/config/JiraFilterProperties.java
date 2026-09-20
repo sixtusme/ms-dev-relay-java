@@ -27,7 +27,7 @@ public class JiraFilterProperties {
    * Si es true, el comentario con la keyword debe haberlo escrito el propio
    * asignado o alguien en trustedTriggerAuthors.
    */
-  private boolean commentAuthorMustBeAssignee = true;
+  private boolean requireAssigneeAuthor = true;
 
   /**
    * AccountIds/emails adicionales autorizados a disparar el trigger aunque
