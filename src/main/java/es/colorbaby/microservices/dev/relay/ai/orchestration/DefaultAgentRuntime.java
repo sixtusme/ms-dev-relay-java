@@ -13,6 +13,7 @@ import es.colorbaby.microservices.dev.relay.ai.knowledge.record.KnowledgeContext
 import es.colorbaby.microservices.dev.relay.ai.orchestration.record.AgentExecutionRequest;
 import es.colorbaby.microservices.dev.relay.ai.orchestration.record.AgentExecutionResult;
 import es.colorbaby.microservices.dev.relay.ai.tool.Tool;
+import es.colorbaby.microservices.dev.relay.ai.tool.ToolGuardrail;
 import es.colorbaby.microservices.dev.relay.ai.tool.ToolRegistry;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolArguments;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolContext;
@@ -40,11 +41,14 @@ public class DefaultAgentRuntime implements AgentRuntime {
 
   private final Map<String, Agent> agentsById;
   private final ToolRegistry toolRegistry;
+  private final List<ToolGuardrail> guardrails;
 
-  public DefaultAgentRuntime(final List<Agent> agents, final ToolRegistry toolRegistry) {
+  public DefaultAgentRuntime(final List<Agent> agents, final ToolRegistry toolRegistry,
+      final List<ToolGuardrail> guardrails) {
     this.agentsById = agents.stream()
         .collect(Collectors.toUnmodifiableMap(Agent::id, Function.identity()));
     this.toolRegistry = toolRegistry;
+    this.guardrails = List.copyOf(guardrails);
   }
 
   @Override
@@ -59,6 +63,7 @@ public class DefaultAgentRuntime implements AgentRuntime {
         List.of(),
         new KnowledgeContext(List.of(), List.of()),
         toolRegistry.findForAgent(agent.id()));
+    request.parameters().forEach(context::putState);
 
     log.info("Ejecución {} iniciada con el agente {} para {}",
         executionId, agent.id(), request.issueKey());
@@ -93,7 +98,7 @@ public class DefaultAgentRuntime implements AgentRuntime {
         continue;
       }
       final ToolResult toolResult = executeTool(agent, context, action);
-      context.addMessage(new AgentMessage(MessageRole.TOOL, action.target(), describe(toolResult)));
+      context.addMessage(new AgentMessage(MessageRole.TOOL, messageSource(action), describe(toolResult)));
     }
   }
 
@@ -112,13 +117,37 @@ public class DefaultAgentRuntime implements AgentRuntime {
 
     final ToolContext toolContext =
         new ToolContext(context.executionId(), context.issueKey(), agent.id(), context);
-    final ToolArguments arguments = new ToolArguments(action.arguments());
+    ToolArguments arguments = new ToolArguments(action.arguments());
+
+    for (final ToolGuardrail guardrail : guardrails) {
+      if (!guardrail.appliesTo(tool)) {
+        continue;
+      }
+      final ToolGuardrail.Outcome outcome = guardrail.check(toolContext, arguments);
+      if (outcome.denied()) {
+        log.warn("Guardarraíl {} denegó la ejecución de {}: {}",
+            guardrail.getClass().getSimpleName(), tool.name(), outcome.denial().content());
+        return outcome.denial();
+      }
+      arguments = outcome.arguments();
+    }
+
     try {
       return tool.execute(toolContext, arguments);
     } catch (Exception e) {
       log.warn("Fallo ejecutando la tool {}", tool.name(), e);
       return ToolResult.failure("Error ejecutando " + tool.name() + ": " + e.getMessage());
     }
+  }
+
+  /**
+   * Identifica de qué llamada concreta viene un resultado, no solo de qué tool: si un agente pide
+   * la misma tool varias veces en un paso (ej. leer N ficheros), el {@code target} solo no basta
+   * para que el agente sepa, al leer los mensajes en el siguiente paso, cuál era cuál.
+   */
+  private String messageSource(final AgentAction action) {
+    final Object path = action.arguments().get("path");
+    return path == null ? action.target() : action.target() + ":" + path;
   }
 
   private String describe(final ToolResult result) {

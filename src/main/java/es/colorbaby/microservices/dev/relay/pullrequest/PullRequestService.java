@@ -2,7 +2,11 @@ package es.colorbaby.microservices.dev.relay.pullrequest;
 
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
-import es.colorbaby.microservices.dev.relay.coder.CoderService;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.CoderAgent;
+import es.colorbaby.microservices.dev.relay.ai.agent.state.AgentStatus;
+import es.colorbaby.microservices.dev.relay.ai.orchestration.AgentRuntime;
+import es.colorbaby.microservices.dev.relay.ai.orchestration.record.AgentExecutionRequest;
+import es.colorbaby.microservices.dev.relay.ai.orchestration.record.AgentExecutionResult;
 import es.colorbaby.microservices.dev.relay.config.GithubIntegrationProperties;
 import es.colorbaby.microservices.dev.relay.github.client.GithubClient;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
@@ -15,6 +19,7 @@ import es.colorbaby.microservices.dev.relay.verification.VerificationService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,7 +43,7 @@ public class PullRequestService {
   private final JiraClient jiraClient;
   private final RepoResolver repoResolver;
   private final RepoSelector repoSelector;
-  private final CoderService coderService;
+  private final AgentRuntime agentRuntime;
   private final TaskRecorder taskRecorder;
   private final ReportService reportService;
   private final VerificationService verificationService;
@@ -135,8 +140,7 @@ public class PullRequestService {
         githubClient.createBranch(repo, branch, githubClient.getBranchSha(repo, base));
         // El coder intenta implementar la tarea; si no puede (apagado/dry-run/sin cambios/fallo),
         // se deja el placeholder para que la PR tenga al menos un commit que la sostenga.
-        final boolean coded =
-            coderService.tryImplement(issueKey, repo, branch, summary, description);
+        final boolean coded = codeWithAgent(issueKey, repo, branch, summary, description);
         if (!coded) {
           githubClient.putFile(repo, branch, ".sixai/" + issueKey + ".md",
               placeholder, "chore(sixai): arranque de " + issueKey);
@@ -165,6 +169,20 @@ public class PullRequestService {
           "sixai ha arrancado el trabajo abriendo estas PRs:\n" + String.join("\n", links));
     }
     return codedRepos;
+  }
+
+  /**
+   * Pide al {@link CoderAgent}, vía {@link AgentRuntime}, que implemente la tarea en la rama.
+   * True si commiteó algo; false si está apagado, en dry-run, no propuso nada aplicable o falló
+   * (el llamante cae entonces al placeholder).
+   */
+  private boolean codeWithAgent(final String issueKey, final String repo, final String branch,
+      final String summary, final String description) {
+    final AgentExecutionResult result = agentRuntime.execute(new AgentExecutionRequest(
+        issueKey, summary, description, CoderAgent.ID,
+        Map.of("repo", repo, "branch", branch)));
+    return result.status() == AgentStatus.COMPLETED
+        && result.summary() != null && !result.summary().isBlank();
   }
 
   /** El informe que se publica en la carpeta de la tarea cuando el coder ha resuelto algo. */
