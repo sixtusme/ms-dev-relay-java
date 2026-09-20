@@ -4,6 +4,13 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+### OpenAPI: esquemas que vienen de la lib (ms-dev-relay-lib-java) ###
+# El plugin unpack-openapi (generate-sources) los copia aquí desde el jar de
+# ms-lib-dev-relay-common en cada build; commitearlos aquí duplicaría su fuente
+# de verdad, que es la lib. Los paths (paths/**) SÍ son propios de esta app y
+# SÍ se commitean.
+src/main/resources/static/openapi/schemas/sixai/
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
