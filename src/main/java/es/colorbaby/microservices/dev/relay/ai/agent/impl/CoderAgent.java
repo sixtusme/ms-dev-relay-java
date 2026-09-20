@@ -65,6 +65,7 @@ public class CoderAgent implements Agent {
 
   private static final String STATE_TO_READ = "coder.toRead";
   private static final String STATE_SUMMARY = "coder.summary";
+  private static final String STATE_CHANGED_FILES = "coder.changedFiles";
 
   private static final String SUCCESS_PREFIX = ToolStatus.SUCCESS.name() + ": ";
 
@@ -186,7 +187,11 @@ public class CoderAgent implements Agent {
         + (changeSet.summary() == null || changeSet.summary().isBlank()
             ? "" : " · " + firstLine(changeSet.summary()));
 
+    final List<String> changedPaths = new ArrayList<>(files.keySet());
+    changedPaths.addAll(deletes);
+
     context.putState(STATE_SUMMARY, changeSet.summary());
+    context.putState(STATE_CHANGED_FILES, changedPaths);
     final AgentAction commitAction = new AgentAction(ActionType.TOOL, GITHUB_COMMIT, Map.of(
         "repo", repo,
         "branch", requireState(context, "branch"),
@@ -205,7 +210,8 @@ public class CoderAgent implements Agent {
     final Object summary = context.state().get(STATE_SUMMARY);
     final String text = summary == null || String.valueOf(summary).isBlank()
         ? "Cambios aplicados" : String.valueOf(summary);
-    return new AgentResult(AgentStatus.COMPLETED, text, List.of());
+    final Object changedFiles = context.state().getOrDefault(STATE_CHANGED_FILES, List.of());
+    return new AgentResult(AgentStatus.COMPLETED, text, List.of(), Map.of("changedFiles", changedFiles));
   }
 
   // --- Generación con el LLM (misma lógica que el antiguo CoderService) ---
@@ -215,6 +221,7 @@ public class CoderAgent implements Agent {
     final StringBuilder user = new StringBuilder();
     user.append("Tarea:\n").append(task).append("\n\nÁrbol del repo:\n")
         .append(String.join("\n", tree));
+    appendPlan(context, user);
     if (!readContext.isEmpty()) {
       user.append("\n\nContenido de ficheros relevantes:\n");
       for (final Map.Entry<String, String> entry : readContext.entrySet()) {
@@ -227,6 +234,20 @@ public class CoderAgent implements Agent {
     final String output = llmClient.complete(
         LlmRequest.ofComplete(systemPrompt, user.toString(), LlmRoles.CODER, context.issueKey()));
     return toChangeSet(output);
+  }
+
+  /**
+   * Añade al prompt el plan del {@link PlannerAgent}, si lo hay (viene sembrado en el estado por
+   * quien invocó al coder — ver {@code PullRequestService}). Sin planner activo, o si no dejó
+   * plan, el coder decide como siempre.
+   */
+  private void appendPlan(final AgentContext context, final StringBuilder user) {
+    final Object plan = context.state().get("plan");
+    if (plan == null || String.valueOf(plan).isBlank()) {
+      return;
+    }
+    user.append("\n\nPlan del planner (síguelo salvo que sea incompatible con lo que encuentres):\n")
+        .append(plan);
   }
 
   /**
