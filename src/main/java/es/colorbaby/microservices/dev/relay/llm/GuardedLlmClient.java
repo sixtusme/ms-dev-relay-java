@@ -1,6 +1,7 @@
 package es.colorbaby.microservices.dev.relay.llm;
 
 import es.colorbaby.microservices.dev.relay.guardrail.SecretRedactor;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -28,5 +29,10 @@ public class GuardedLlmClient implements LlmClient {
         request.metadata(),
         request.requireComplete());
     return redactor.redact(delegate.complete(safe));
+  }
+
+  @Override
+  public List<Double> embed(final String text, final String issueKey) {
+    return delegate.embed(redactor.redact(text), issueKey);
   }
 }
