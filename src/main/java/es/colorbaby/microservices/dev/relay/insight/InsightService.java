@@ -3,6 +3,8 @@ package es.colorbaby.microservices.dev.relay.insight;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import es.colorbaby.microservices.dev.relay.ai.skill.Skill;
+import es.colorbaby.microservices.dev.relay.ai.skill.SkillRegistry;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
@@ -32,7 +34,10 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class InsightService {
 
-  private static final String ROUTER_PROMPT_HEAD =
+  private static final String SKILL_ID = "insight-routing";
+
+  // Fallback si, por lo que sea, la skill no está en el classpath.
+  private static final String FALLBACK_ROUTER_PROMPT_HEAD =
       "Eres Sixai. Te doy una pregunta sobre tu propia actividad y una lista de consultas "
       + "disponibles. Elige la que mejor la responde. Responde ÚNICAMENTE con JSON válido, sin "
       + "texto alrededor: {\"query\": \"ID_DE_LA_LISTA\", \"issueKey\": \"CLAVE\"}. El campo "
@@ -43,6 +48,7 @@ public class InsightService {
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
   private final ObjectMapper objectMapper;
+  private final SkillRegistry skillRegistry;
 
   /** Catálogo para pintar los botones del panel. */
   public List<Map<String, Object>> catalog() {
@@ -103,7 +109,10 @@ public class InsightService {
 
   /** El modelo elige un identificador del catálogo; cualquier otra cosa se descarta. */
   private InsightQuery route(final String question) {
-    final StringBuilder prompt = new StringBuilder(ROUTER_PROMPT_HEAD);
+    final String head = skillRegistry.find(SKILL_ID)
+        .map(Skill::instructions)
+        .orElse(FALLBACK_ROUTER_PROMPT_HEAD);
+    final StringBuilder prompt = new StringBuilder(head);
     for (final InsightQuery query : InsightQuery.values()) {
       prompt.append("- ").append(query.name()).append(": ").append(query.description()).append('\n');
     }

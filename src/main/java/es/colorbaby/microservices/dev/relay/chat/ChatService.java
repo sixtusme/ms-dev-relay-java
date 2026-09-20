@@ -4,6 +4,8 @@ import es.colorbaby.microservices.dev.relay.activity.TaskEvent;
 import es.colorbaby.microservices.dev.relay.activity.TaskEventRepository;
 import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.activity.TaskRunRepository;
+import es.colorbaby.microservices.dev.relay.ai.skill.Skill;
+import es.colorbaby.microservices.dev.relay.ai.skill.SkillRegistry;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
@@ -33,7 +35,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ChatService {
 
-  private static final String SYSTEM_PROMPT =
+  private static final String SKILL_ID = "chat-explain";
+
+  // Fallback si, por lo que sea, la skill no está en el classpath.
+  private static final String FALLBACK_SYSTEM_PROMPT =
       "Eres Sixai y estás respondiendo preguntas sobre TU PROPIO trabajo ya realizado. Te doy el "
       + "contexto registrado (la tarea, su línea de tiempo y sus informes) y la conversación. "
       + "Responde en español, breve y concreto, APOYÁNDOTE SOLO en ese contexto. Si el contexto no "
@@ -54,6 +59,7 @@ public class ChatService {
   private final ReportRepository reports;
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
+  private final SkillRegistry skillRegistry;
 
   /** Mensajes de la conversación viva de una tarea (vacío si aún no hay). */
   @Transactional(readOnly = true)
@@ -88,8 +94,11 @@ public class ChatService {
     try {
       final String prompt = context(issueKey) + "\n\n## Conversación\n"
           + conversationText(conversation.getId());
+      final String systemPrompt = skillRegistry.find(SKILL_ID)
+          .map(Skill::instructions)
+          .orElse(FALLBACK_SYSTEM_PROMPT);
       return llmClient.complete(
-          LlmRequest.of(SYSTEM_PROMPT, prompt, LlmRoles.PLANNER, issueKey));
+          LlmRequest.of(systemPrompt, prompt, LlmRoles.PLANNER, issueKey));
     } catch (RuntimeException e) {
       log.warn("Fallo del LLM respondiendo el chat de {}: {}", issueKey, e.getMessage());
       return "No he podido responder ahora mismo.";
