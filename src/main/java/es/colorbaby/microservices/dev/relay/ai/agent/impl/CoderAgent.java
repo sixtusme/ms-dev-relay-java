@@ -72,7 +72,8 @@ public class CoderAgent implements Agent {
       + "solo JSON: {\"read\": [\"ruta1\"]}.";
   private static final String FALLBACK_GENERATE_PROMPT =
       "Eres el coder de Sixai. Implementa la tarea. Responde solo JSON: {\"summary\": \"...\", "
-      + "\"changes\": [{\"path\": \"...\", \"action\": \"CREATE|UPDATE\", \"content\": \"...\"}]}.";
+      + "\"changes\": [{\"path\": \"...\", \"action\": \"CREATE|UPDATE|DELETE\", \"content\": "
+      + "\"...\"}]}. Para DELETE omite \"content\" (o déjalo vacío): no hace falta.";
 
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
@@ -169,8 +170,13 @@ public class CoderAgent implements Agent {
     }
 
     final Map<String, String> files = new LinkedHashMap<>();
+    final List<String> deletes = new ArrayList<>();
     for (final FileChange change : changeSet.changes()) {
-      files.put(change.path(), change.content());
+      if (change.type() == FileChange.ChangeType.DELETE) {
+        deletes.add(change.path());
+      } else {
+        files.put(change.path(), change.content());
+      }
     }
     final String message = properties.getCommitMessagePrefix() + context.issueKey()
         + (changeSet.summary() == null || changeSet.summary().isBlank()
@@ -181,6 +187,7 @@ public class CoderAgent implements Agent {
         "repo", repo,
         "branch", requireState(context, "branch"),
         "files", files,
+        "deletes", deletes,
         "message", message));
     return new AgentResult(AgentStatus.WAITING_FOR_TOOL, "Commiteando cambios", List.of(commitAction));
   }
@@ -227,12 +234,16 @@ public class CoderAgent implements Agent {
     if (nodes != null && nodes.isArray()) {
       for (final JsonNode node : nodes) {
         final String path = node.path("path").asText(null);
-        final String content = node.path("content").asText(null);
-        if (path == null || path.isBlank() || content == null) {
+        if (path == null || path.isBlank()) {
           continue;
         }
-        final String action = node.path("action").asText("");
-        changes.add(new FileChange(path.strip(), changeType(action), content));
+        final FileChange.ChangeType type = changeType(node.path("action").asText(""));
+        final String content = node.path("content").asText(null);
+        // DELETE no necesita contenido; CREATE/UPDATE sin contenido no es un cambio aplicable.
+        if (type != FileChange.ChangeType.DELETE && content == null) {
+          continue;
+        }
+        changes.add(new FileChange(path.strip(), type, content == null ? "" : content));
         if (changes.size() >= properties.getMaxChanges()) {
           break;
         }
@@ -242,8 +253,13 @@ public class CoderAgent implements Agent {
   }
 
   private FileChange.ChangeType changeType(final String action) {
-    return "CREATE".equalsIgnoreCase(action)
-        ? FileChange.ChangeType.CREATE : FileChange.ChangeType.UPDATE;
+    if ("CREATE".equalsIgnoreCase(action)) {
+      return FileChange.ChangeType.CREATE;
+    }
+    if ("DELETE".equalsIgnoreCase(action)) {
+      return FileChange.ChangeType.DELETE;
+    }
+    return FileChange.ChangeType.UPDATE;
   }
 
   private List<String> parseReadList(final String output, final List<String> tree) {
