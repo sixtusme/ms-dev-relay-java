@@ -62,7 +62,7 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
             Map.of("role", "system", "content", request.systemPrompt()),
             Map.of("role", "user", "content", request.userPrompt())));
 
-    HttpHeaders headers = buildHeaders(request);
+    HttpHeaders headers = buildHeaders(request.role(), request.metadata());
 
     Map<String, Object> response;
     try {
@@ -77,6 +77,26 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
     Map<String, Object> choice = firstChoice(response);
     checkNotTruncated(choice, request, model, maxTokens);
     return extractContent(choice);
+  }
+
+  @Override
+  public List<Double> embed(final String text, final String issueKey) {
+    String url = properties.getBaseUrl().replaceAll("/+$", "") + "/embeddings";
+    String model = properties.modelFor(LlmRoles.EMBEDDING);
+
+    Map<String, Object> body = Map.of("model", model, "input", text);
+    Map<String, String> metadata = issueKey == null || issueKey.isBlank()
+        ? Map.of() : Map.of("issue", issueKey);
+    HttpHeaders headers = buildHeaders(LlmRoles.EMBEDDING, metadata);
+
+    Map<String, Object> response;
+    try {
+      response = postForMap(restTemplateFor(LlmRoles.EMBEDDING), url, new HttpEntity<>(body, headers));
+    } catch (RestClientException e) {
+      throw new LlmClientException("Fallo pidiendo embeddings (" + properties.getProvider()
+          + " @ " + url + ", modelo " + model + ")", e);
+    }
+    return extractEmbedding(response);
   }
 
   /**
@@ -112,16 +132,16 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
    * (rol e issue). Ollama y OpenAI ignoran esas cabeceras; un gateway de modelos las usa para traza
    * y coste por tarea. El prefijo {@code x-sixai-} evita chocar con nada estándar.
    */
-  private HttpHeaders buildHeaders(final LlmRequest request) {
+  private HttpHeaders buildHeaders(final String role, final Map<String, String> metadata) {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
     if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
       headers.setBearerAuth(properties.getApiKey());
     }
-    if (request.role() != null && !request.role().isBlank()) {
-      headers.add("x-sixai-role", request.role());
+    if (role != null && !role.isBlank()) {
+      headers.add("x-sixai-role", role);
     }
-    request.metadata().forEach((key, value) -> {
+    metadata.forEach((key, value) -> {
       if (key != null && !key.isBlank() && value != null && !value.isBlank()) {
         headers.add("x-sixai-" + key, value);
       }
@@ -149,6 +169,26 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
       throw new LlmClientException("Formato de 'choices' inesperado: " + first);
     }
     return (Map<String, Object>) choice;
+  }
+
+  @SuppressWarnings("unchecked")
+  private List<Double> extractEmbedding(final Map<String, Object> response) {
+    if (response == null) {
+      throw new LlmClientException("El proveedor de embeddings no devolvió respuesta");
+    }
+    Object data = response.get("data");
+    if (!(data instanceof List<?> list) || list.isEmpty()) {
+      throw new LlmClientException("Respuesta de embeddings sin 'data': " + response);
+    }
+    Object first = list.get(0);
+    if (!(first instanceof Map<?, ?> item)) {
+      throw new LlmClientException("Formato de 'data' inesperado: " + first);
+    }
+    Object embedding = ((Map<String, Object>) item).get("embedding");
+    if (!(embedding instanceof List<?> vector)) {
+      throw new LlmClientException("Respuesta de embeddings sin 'embedding': " + item);
+    }
+    return vector.stream().map(v -> ((Number) v).doubleValue()).toList();
   }
 
   @SuppressWarnings("unchecked")
