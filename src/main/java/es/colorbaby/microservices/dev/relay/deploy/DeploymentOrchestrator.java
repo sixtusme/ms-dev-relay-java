@@ -1,11 +1,8 @@
 package es.colorbaby.microservices.dev.relay.deploy;
 
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.DiagnosticianAgent;
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
-import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.jenkins.client.JenkinsClient;
-import es.colorbaby.microservices.dev.relay.llm.LlmClient;
-import es.colorbaby.microservices.dev.relay.llm.LlmRequest;
-import es.colorbaby.microservices.dev.relay.llm.LlmRoles;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,26 +20,19 @@ import org.springframework.stereotype.Component;
  * donde estaban en vez de perderlos (que era el problema serio del diseño anterior en memoria).
  *
  * <p>Best-effort y acotado: un tope de sondeos común evita seguir un despliegue colgado para
- * siempre. Si un job falla y hay LLM, se adjunta un diagnóstico de la consola.
+ * siempre. Si un job falla, se adjunta el diagnóstico de {@link DiagnosticianAgent}.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class DeploymentOrchestrator {
 
-  private static final String DIAGNOSE_SYSTEM_PROMPT =
-      "Eres Sixai. Te doy la consola (la cola) de un job de Jenkins que ha fallado. Resume en "
-      + "pocas frases, en español, la causa más probable del fallo y qué habría que revisar. Sé "
-      + "concreto y no inventes: si la consola no basta para saberlo, dilo.";
-
   private final DeploymentProperties properties;
   private final DeploymentRunRepository runs;
   private final DeploymentCoordinator coordinator;
   private final JenkinsClient jenkinsClient;
   private final ImageVersionResolver imageVersionResolver;
-  private final LlmClient llmClient;
-  private final LlmProperties llmProperties;
-  private final DeployDiagnosisService deployDiagnosis;
+  private final DiagnosticianAgent diagnosticianAgent;
 
   /** Barrido periódico. El intervalo es {@code maestro.deploy.poll-interval-ms}. */
   @Scheduled(fixedDelayString = "${maestro.deploy.poll-interval-ms:30000}")
@@ -109,7 +99,8 @@ public class DeploymentOrchestrator {
     }
     if (!build.get().success()) {
       finishFailure(run, "el build de " + run.getBranch() + " terminó en "
-          + build.get().result() + diagnose(run.getBuildJob(), run.getBuildNumber()));
+          + build.get().result()
+          + diagnosticianAgent.diagnoseConsole(run.getBuildJob(), run.getBuildNumber(), run.getIssueKey()));
       return;
     }
     // Qué imagen publicó ESTE build. No vale "la última de Harbor": ver ImageVersionResolver.
@@ -150,8 +141,9 @@ public class DeploymentOrchestrator {
     // En el fallo de DESPLIEGUE se mira más allá de la consola: el gate de Harbor y el propio
     // contenedor en la máquina destino, que es donde está de verdad la causa.
     final String reason = "el despliegue a " + run.getEnvironment() + " terminó en "
-        + build.get().result() + diagnose(run.getDeployJob(), run.getDeployBuildNumber());
-    finishFailure(run, reason + deployDiagnosis.diagnose(run, reason));
+        + build.get().result()
+        + diagnosticianAgent.diagnoseConsole(run.getDeployJob(), run.getDeployBuildNumber(), run.getIssueKey());
+    finishFailure(run, reason + diagnosticianAgent.diagnoseDeployment(run, reason));
   }
 
   private void finishSuccess(final DeploymentRun run) {
@@ -170,27 +162,4 @@ public class DeploymentOrchestrator {
     coordinator.onRunFinished(run);
   }
 
-  private String diagnose(final String jobPath, final int buildNumber) {
-    if (!properties.isDiagnoseOnFailure() || !llmProperties.isEnabled()) {
-      return "";
-    }
-    try {
-      final String console = jenkinsClient.getConsoleLog(jobPath, buildNumber);
-      final String tail = tail(console, properties.getConsoleMaxChars());
-      final String diagnosis = llmClient.complete(
-          LlmRequest.of(DIAGNOSE_SYSTEM_PROMPT, tail, LlmRoles.DIAGNOSE, jobPath));
-      return diagnosis == null || diagnosis.isBlank()
-          ? "" : "\nDiagnóstico de Sixai:\n" + diagnosis;
-    } catch (RuntimeException e) {
-      log.warn("No se pudo diagnosticar el job {}: {}", jobPath, e.getMessage());
-      return "";
-    }
-  }
-
-  private static String tail(final String value, final int max) {
-    if (value == null) {
-      return "";
-    }
-    return value.length() <= max ? value : value.substring(value.length() - max);
-  }
 }
