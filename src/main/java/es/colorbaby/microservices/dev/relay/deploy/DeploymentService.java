@@ -27,10 +27,6 @@ public class DeploymentService {
 
   /** Qué arrancó y qué se quedó fuera, para poder contarlo en la tarea. */
   public record StartResult(int started, List<String> skipped) {
-
-    public boolean any() {
-      return started > 0;
-    }
   }
 
   private final JenkinsClient jenkinsClient;

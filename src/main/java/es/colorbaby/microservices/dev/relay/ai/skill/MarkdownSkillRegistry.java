@@ -44,16 +44,6 @@ public class MarkdownSkillRegistry implements SkillRegistry {
     return Optional.ofNullable(skillsById.get(id));
   }
 
-  @Override
-  public List<Skill> findAll() {
-    return List.copyOf(skillsById.values());
-  }
-
-  @Override
-  public List<Skill> findByIds(final List<String> ids) {
-    return ids.stream().map(skillsById::get).filter(java.util.Objects::nonNull).toList();
-  }
-
   private Map<String, Skill> loadAll() {
     final Map<String, Skill> result = new LinkedHashMap<>();
     try {
