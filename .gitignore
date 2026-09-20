@@ -4,12 +4,14 @@ target/
 !**/src/test/**/target/
 .kotlin
 
-### OpenAPI: esquemas que vienen de la lib (ms-dev-relay-lib-java) ###
+### OpenAPI: fragmentos que vienen de la lib (ms-dev-relay-lib-java) ###
 # El plugin unpack-openapi (generate-sources) los copia aquí desde el jar de
-# ms-lib-dev-relay-common en cada build; commitearlos aquí duplicaría su fuente
-# de verdad, que es la lib. Los paths (paths/**) SÍ son propios de esta app y
-# SÍ se commitean.
-src/main/resources/static/openapi/schemas/sixai/
+# ms-lib-dev-relay-common en cada build. Tanto los esquemas como los PATHS viven
+# y se commitean en la lib (fuente de verdad única); aquí serían una copia
+# duplicada que además se pisa sola en cada build. El openapi.yaml raíz de esta
+# app SÍ se commitea: es la config propia que le dice al generador qué generar.
+src/main/resources/static/openapi/schemas/
+src/main/resources/static/openapi/paths/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
