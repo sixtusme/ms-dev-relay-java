@@ -10,6 +10,9 @@ import es.colorbaby.microservices.dev.relay.ai.agent.record.AgentMessage;
 import es.colorbaby.microservices.dev.relay.ai.agent.record.AgentResult;
 import es.colorbaby.microservices.dev.relay.ai.agent.state.ActionType;
 import es.colorbaby.microservices.dev.relay.ai.agent.state.AgentStatus;
+import es.colorbaby.microservices.dev.relay.ai.knowledge.Knowledge;
+import es.colorbaby.microservices.dev.relay.ai.knowledge.record.KnowledgeDocument;
+import es.colorbaby.microservices.dev.relay.ai.knowledge.record.KnowledgeQuery;
 import es.colorbaby.microservices.dev.relay.ai.skill.Skill;
 import es.colorbaby.microservices.dev.relay.ai.skill.SkillRegistry;
 import es.colorbaby.microservices.dev.relay.ai.tool.state.ToolStatus;
@@ -80,6 +83,7 @@ public class CoderAgent implements Agent {
   private final CoderProperties properties;
   private final PromptShield promptShield;
   private final SkillRegistry skillRegistry;
+  private final Knowledge knowledge;
   private final ObjectMapper objectMapper;
 
   @Override
@@ -218,10 +222,39 @@ public class CoderAgent implements Agent {
             .append(entry.getValue()).append("\n");
       }
     }
+    appendKnowledge(context, user);
     final String systemPrompt = skillPrompt(SKILL_GENERATE, FALLBACK_GENERATE_PROMPT);
     final String output = llmClient.complete(
         LlmRequest.ofComplete(systemPrompt, user.toString(), LlmRoles.CODER, context.issueKey()));
     return toChangeSet(output);
+  }
+
+  /**
+   * Añade al prompt la documentación de arquitectura relevante para la tarea, si el Knowledge
+   * encuentra algo. Best-effort: si falla o no hay nada relevante, el coder sigue sin ese contexto
+   * (igual que sin él antes de que existiera el Knowledge).
+   */
+  private void appendKnowledge(final AgentContext context, final StringBuilder user) {
+    final String queryText = ((context.taskTitle() == null ? "" : context.taskTitle())
+        + "\n" + (context.taskDescription() == null ? "" : context.taskDescription())).strip();
+    if (queryText.isBlank()) {
+      return;
+    }
+    final List<KnowledgeDocument> found;
+    try {
+      found = knowledge.retrieve(new KnowledgeQuery(queryText, context.issueKey(), 0)).documents();
+    } catch (RuntimeException e) {
+      log.warn("No se pudo consultar el Knowledge para {}: {}", context.issueKey(), e.getMessage());
+      return;
+    }
+    if (found.isEmpty()) {
+      return;
+    }
+    user.append("\n\nDocumentación de arquitectura relevante:\n");
+    for (final KnowledgeDocument document : found) {
+      user.append("=== ").append(document.title()).append(" (").append(document.source())
+          .append(") ===\n").append(document.content()).append("\n");
+    }
   }
 
   private ChangeSet toChangeSet(final String output) {
