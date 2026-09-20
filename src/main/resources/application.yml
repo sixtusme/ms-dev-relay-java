@@ -105,6 +105,7 @@ maestro:
       planner:   "${MAESTRO_LLM_MODEL_PLANNER:qwen3:8b}"              # planifica la siguiente acción
       coder:     "${MAESTRO_LLM_MODEL_CODER:qwen2.5-coder:7b}"        # código; cabe en 16 GB con holgura
       diagnose:  "${MAESTRO_LLM_MODEL_DIAGNOSE:qwen3:8b}"            # razonamiento; el r1:14b hace OOM en 16 GB
+      embedding: "${MAESTRO_LLM_MODEL_EMBEDDING:nomic-embed-text}"   # ~274 MB; para el Knowledge (retrieval)
     api-key: ${MAESTRO_LLM_API_KEY:}                       # vacío para Ollama; el token del proveedor/gateway cloud
     temperature: ${MAESTRO_LLM_TEMPERATURE:0.4}
     max-tokens: ${MAESTRO_LLM_MAX_TOKENS:1024}               # para los roles que no tengan el suyo
@@ -268,6 +269,19 @@ maestro:
     max-changes: ${MAESTRO_CODER_MAX_CHANGES:15}
     # Entrecomillado: el valor lleva ": " y sin comillas YAML lo lee como un mapa y no arranca.
     commit-message-prefix: '${MAESTRO_CODER_COMMIT_PREFIX:feat(sixai): }'
+
+  # --- Knowledge (retrieval semántico sobre la documentación del proyecto) ---
+  # Al arrancar, indexa resources/docs/*.md (embedding por fichero, sin trocear). El coder consulta
+  # esto antes de generar cambios, para tener contexto de arquitectura sin volcar toda la
+  # documentación en el prompt. Requiere maestro.llm.enabled=true (indexar y consultar usan
+  # embeddings). Primera fase de la hoja de ruta: "documentos → chunks → retrieval semántico"; el
+  # grafo de conocimiento queda para más adelante.
+  knowledge:
+    enabled: ${MAESTRO_KNOWLEDGE_ENABLED:false}
+    documents-location: ${MAESTRO_KNOWLEDGE_DOCUMENTS_LOCATION:classpath:docs/*.md}
+    max-results: ${MAESTRO_KNOWLEDGE_MAX_RESULTS:5}
+    # Similitud coseno mínima (0..1) para contar un documento como relevante.
+    min-score: ${MAESTRO_KNOWLEDGE_MIN_SCORE:0.5}
 
   # --- Comandos dirigidos (/sixai · @sixai) ---
   # En una tarea YA arrancada (En curso / TEST), un comentario que empiece por /sixai o @sixai es
