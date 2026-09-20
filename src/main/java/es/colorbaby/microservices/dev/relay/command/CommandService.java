@@ -2,6 +2,7 @@ package es.colorbaby.microservices.dev.relay.command;
 
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.RouterAgent;
 import es.colorbaby.microservices.dev.relay.approval.PromotionService;
 import es.colorbaby.microservices.dev.relay.config.CommandProperties;
 import es.colorbaby.microservices.dev.relay.correction.CorrectionService;
@@ -35,7 +36,7 @@ public class CommandService {
 
   private final JiraClient jiraClient;
   private final CommandDetector detector;
-  private final CommandIntentInterpreter interpreter;
+  private final RouterAgent routerAgent;
   private final SessionQueryService sessionQueryService;
   private final PromotionService promotionService;
   private final CorrectionService correctionService;
@@ -60,7 +61,8 @@ public class CommandService {
   }
 
   private void handleOne(final JiraIssueDto issue, final SixaiCommand command) {
-    final CommandIntent intent = interpreter.interpret(command);
+    final CommandIntent intent =
+        routerAgent.route(command.issueKey(), command.issueStatus(), command.instruction());
     log.info("Comando en {} de {}: intención {} — \"{}\"",
         command.issueKey(), authorLabel(command.author()), intent, command.instruction());
     recordIntent(command, intent);
