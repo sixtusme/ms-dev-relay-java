@@ -1,10 +1,9 @@
 package es.colorbaby.microservices.dev.relay.ai.tool.record;
 
 import java.util.Map;
-import java.util.Objects;
 
 public record ToolArguments(
-        Map<String, Objects> values
+        Map<String, Object> values
 ) {
 
     public String getString(String key) {
