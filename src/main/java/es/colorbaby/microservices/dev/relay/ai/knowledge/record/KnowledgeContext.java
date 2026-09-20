@@ -8,17 +8,3 @@ public record KnowledgeContext (
 ) {
 
 }
-
-record KnowledgeDocument(
-        String id,
-        String title,
-        String content,
-        String source,
-        double score
-) { }
-
-record KnowledgeRelation(
-        String sourceId,
-        String relation,
-        String targetId
-) { }
