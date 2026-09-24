@@ -301,6 +301,12 @@ maestro:
       PROD: ${MAESTRO_HOST_PROD:devops04}
       DINAHOSTING: ${MAESTRO_HOST_DINAHOSTING:dinahosting}
 
+  # Ciclo de vida explícito de cada tarea: fase → gate → evidencia. Con enforce=false solo
+  # registra y avisa (LIFECYCLE_VIOLATION) de lo que el modo estricto habría bloqueado; con true,
+  # bloquea. Se pasa a true cuando los avisos lleven tiempo sin aparecer.
+  lifecycle:
+    enforce: ${MAESTRO_LIFECYCLE_ENFORCE:false}
+
   # Cierra el bucle: si el cliente dice que algo está mal (/sixai …) o un despliegue a PRE falla,
   # sixai vuelve a trabajar. Cada intento abre PRs nuevas y vuelve a pasar por aprobación humana
   # → PRE → TEST. max-cycles evita quemar CI en bucle; al agotarse, sixai para y escala a una

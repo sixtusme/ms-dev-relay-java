@@ -96,10 +96,14 @@ public class TaskMonitorService {
     if (running.isPresent()) {
       return fromDeployment(running.get());
     }
-    if (timeline.isEmpty()) {
+    // Un aviso del ciclo de vida no es una etapa: la etapa es el último hito real.
+    final Optional<TaskEvent> last = timeline.stream()
+        .filter(event -> event.getType() != TaskEventType.LIFECYCLE_VIOLATION)
+        .reduce((previous, next) -> next);
+    if (last.isEmpty()) {
       return new Stage("Arrancando", "STARTING", null);
     }
-    return fromEvent(timeline.get(timeline.size() - 1));
+    return fromEvent(last.get());
   }
 
   private static Stage fromDeployment(final DeploymentRun run) {
@@ -135,6 +139,8 @@ public class TaskMonitorService {
       case PROMOTED -> new Stage("Promocionando a producción", "PROMOTING", detail);
       case DEPLOYED_PROD -> new Stage("Desplegada en producción", "DEPLOYED_PROD", detail);
       case GAVE_UP -> new Stage("Necesita una persona", "GAVE_UP", detail);
+      // No se llega aquí (stageOf lo filtra); el switch es exhaustivo y lo exige.
+      case LIFECYCLE_VIOLATION -> new Stage("En curso", "IN_PROGRESS", detail);
       case FAILED -> new Stage("Con fallos", "FAILED", detail);
     };
   }

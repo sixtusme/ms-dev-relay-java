@@ -1,7 +1,5 @@
 package es.colorbaby.microservices.dev.relay.activity;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,12 +78,7 @@ public class TaskRecorder {
   /** Cierra la tarea midiendo cuánto tardó desde que se cogió. */
   @Transactional
   public void finish(final String issueKey, final String status) {
-    update(issueKey, task -> {
-      final Instant now = Instant.now();
-      task.setStatus(status);
-      task.setFinishedAt(now);
-      task.setDurationMs(Duration.between(task.getStartedAt(), now).toMillis());
-    });
+    update(issueKey, task -> task.close(status));
   }
 
   /** Tarea viva de una issue, si la hay. */

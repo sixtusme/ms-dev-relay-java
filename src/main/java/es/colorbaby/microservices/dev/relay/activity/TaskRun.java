@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -71,11 +72,26 @@ public class TaskRun {
   @Column(name = "duration_ms")
   private Long durationMs;
 
+  /**
+   * Correcciones ya consumidas (vueltas a implementar). Es el presupuesto que limita
+   * {@code maestro.correction.max-cycles}; antes se contaba recorriendo la línea de tiempo.
+   */
+  @Column(name = "remediation_iterations", nullable = false)
+  private int remediationIterations;
+
   public TaskRun(final String issueKey, final String requestedByAccountId,
       final String requestedByName, final String triggerSource) {
     this.issueKey = issueKey;
     this.requestedByAccountId = requestedByAccountId;
     this.requestedByName = requestedByName;
     this.triggerSource = triggerSource;
+  }
+
+  /** Cierra la tarea midiendo cuánto tardó desde que se cogió. */
+  public void close(final String finalStatus) {
+    final Instant now = Instant.now();
+    this.status = finalStatus;
+    this.finishedAt = now;
+    this.durationMs = Duration.between(startedAt, now).toMillis();
   }
 }
