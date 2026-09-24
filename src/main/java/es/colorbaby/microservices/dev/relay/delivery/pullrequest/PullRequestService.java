@@ -132,10 +132,17 @@ public class PullRequestService {
     } catch (RuntimeException e) {
       log.error("Error abriendo PRs para {}: {}", issueKey, e.getMessage());
       // Si aún no se habían elegido repos, lo que falló fue la selección; si no, la implementación.
+      // Si la implementación ya tiene veredicto, el fallo es posterior (comentario, informe) y no
+      // lo cambia.
       final String reason = "error abriendo PRs: " + e.getMessage();
-      outcomes.add(outcomes.isEmpty() ? selectionFailed(reason)
-          : PhaseOutcome.of(TaskPhase.IMPLEMENTATION, Recommendation.FAIL,
-              Evidence.of(EvidenceKind.REASON, reason)));
+      final boolean implementationClosed = outcomes.stream()
+          .anyMatch(o -> o.phase() == TaskPhase.IMPLEMENTATION && o.isAggregate());
+      if (outcomes.isEmpty()) {
+        outcomes.add(selectionFailed(reason));
+      } else if (!implementationClosed) {
+        outcomes.add(PhaseOutcome.of(TaskPhase.IMPLEMENTATION, Recommendation.FAIL,
+            Evidence.of(EvidenceKind.REASON, reason)));
+      }
     }
     return outcomes;
   }
@@ -223,11 +230,13 @@ public class PullRequestService {
       }
     }
 
+    // El veredicto va ANTES del comentario: si Jira falla al comentar, las PRs y el código ya
+    // existen, y la implementación no debe quedar como fallida por eso.
+    outcomes.add(implementationVerdict(repos.size(), codedRepos.size(), properties.isDryRun()));
     if (!links.isEmpty()) {
       jiraClient.addComment(issueKey,
           "sixai ha arrancado el trabajo abriendo estas PRs:\n" + String.join("\n", links));
     }
-    outcomes.add(implementationVerdict(repos.size(), codedRepos.size(), properties.isDryRun()));
     return codedRepos;
   }
 
