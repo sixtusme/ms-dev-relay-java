@@ -42,6 +42,19 @@ public class SelectorAgent implements Agent {
       "Eres Sixai. Responde ÚNICAMENTE con los nombres exactos de los repositorios donde hay que "
       + "implementar la feature o corregir el bug, uno por línea, sin explicaciones.";
 
+  /** Cómo se eligieron los repos: explica por qué se abrió PR (o no) en cada uno. */
+  public enum Method {
+    NONE,
+    SINGLE_CANDIDATE,
+    LLM,
+    KEYWORDS,
+    ALL_FALLBACK
+  }
+
+  /** Repos donde abrir PR y cómo se eligieron. */
+  public record Selection(List<String> repos, Method method) {
+  }
+
   private final LlmProperties llmProperties;
   private final LlmClient llmClient;
   private final SkillRegistry skillRegistry;
@@ -56,30 +69,30 @@ public class SelectorAgent implements Agent {
     return "Acota los repos candidatos de una tarea a aquellos donde realmente hay que tocar código.";
   }
 
-  /** Nombres de los repos donde abrir PR. Vacío solo si no había candidatos. */
-  public List<String> select(final JiraIssueDto issue, final List<Repo> candidates) {
+  /** Repos donde abrir PR y cómo se eligieron. Vacío solo si no había candidatos. */
+  public Selection select(final JiraIssueDto issue, final List<Repo> candidates) {
     if (candidates.isEmpty()) {
-      return List.of();
+      return new Selection(List.of(), Method.NONE);
     }
     if (candidates.size() == 1) {
-      return List.of(candidates.get(0).getName());
+      return new Selection(List.of(candidates.get(0).getName()), Method.SINGLE_CANDIDATE);
     }
 
     if (llmProperties.isEnabled()) {
       final List<String> byLlm = selectWithLlm(issue, candidates);
       if (!byLlm.isEmpty()) {
-        return byLlm;
+        return new Selection(byLlm, Method.LLM);
       }
       log.warn("El LLM no acotó repos para {}; uso el fallback por keywords", issue.getKey());
     }
 
     final List<String> byKeywords = selectWithKeywords(issue, candidates);
     if (!byKeywords.isEmpty()) {
-      return byKeywords;
+      return new Selection(byKeywords, Method.KEYWORDS);
     }
 
     log.warn("Sin señales para acotar repos de {}; abro PR en todos los candidatos", issue.getKey());
-    return candidates.stream().map(Repo::getName).toList();
+    return new Selection(candidates.stream().map(Repo::getName).toList(), Method.ALL_FALLBACK);
   }
 
   /**

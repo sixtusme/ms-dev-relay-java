@@ -56,6 +56,24 @@ public class CoderAgent implements Agent {
 
   public static final String ID = "coder";
 
+  /** Clave de {@code data} con el motivo del resultado ({@link Outcome#name()}). */
+  public static final String DATA_OUTCOME = "outcome";
+
+  /**
+   * Por qué terminó el coder como terminó. Sin esto, "apagado", "sin cambios", "dry-run", "sin
+   * tokens" o "commit rechazado" llegaban todos como un resumen vacío y se perdía el motivo.
+   */
+  public enum Outcome {
+    CODED,
+    DISABLED,
+    NO_CHANGES,
+    DRY_RUN,
+    TRUNCATED,
+    LLM_ERROR,
+    GUARD_REJECTED,
+    COMMIT_FAILED
+  }
+
   private static final String GITHUB_LIST_PATHS = "github.list_paths";
   private static final String GITHUB_READ_FILE = "github.read_file";
   private static final String GITHUB_COMMIT = "github.commit";
@@ -68,8 +86,6 @@ public class CoderAgent implements Agent {
   private static final String STATE_CHANGED_FILES = "coder.changedFiles";
 
   private static final String SUCCESS_PREFIX = ToolStatus.SUCCESS.name() + ": ";
-
-  private static final ChangeSet EMPTY_CHANGE_SET = new ChangeSet("", List.of());
 
   private static final String FALLBACK_PLAN_PROMPT =
       "Eres el coder de Sixai. Dime qué ficheros EXISTENTES del árbol necesitas leer. Responde "
@@ -101,7 +117,7 @@ public class CoderAgent implements Agent {
   @Override
   public AgentResult execute(final AgentContext context) {
     if (!properties.isEnabled() || !llmProperties.isEnabled()) {
-      return new AgentResult(AgentStatus.COMPLETED, "", List.of());
+      return finished(Outcome.DISABLED);
     }
 
     final Optional<AgentMessage> commitMessage = findMessage(context, GITHUB_COMMIT);
@@ -161,17 +177,26 @@ public class CoderAgent implements Agent {
   private AgentResult generateAndRequestCommit(
       final AgentContext context, final List<String> tree, final Map<String, String> readContext) {
     final String task = task(context);
-    final ChangeSet changeSet = safeCall(
-        () -> generateChanges(context, task, tree, readContext), EMPTY_CHANGE_SET, context.issueKey());
+    final ChangeSet changeSet;
+    try {
+      changeSet = generateChanges(context, task, tree, readContext);
+    } catch (LlmTruncatedException e) {
+      // El modelo SÍ estaba escribiendo la solución y se le acabó el techo: no es "sin cambios".
+      log.error("El coder se quedó sin tokens en {}: {}", context.issueKey(), e.getMessage());
+      return finished(Outcome.TRUNCATED);
+    } catch (RuntimeException e) {
+      log.warn("El coder falló en {}: {}", context.issueKey(), e.getMessage());
+      return finished(Outcome.LLM_ERROR);
+    }
 
     final String repo = requireState(context, "repo");
     if (changeSet.isEmpty()) {
       log.info("El coder no propuso cambios aplicables para {} en {}", context.issueKey(), repo);
-      return new AgentResult(AgentStatus.COMPLETED, "", List.of());
+      return finished(Outcome.NO_CHANGES);
     }
     if (properties.isDryRun()) {
       log.info("[DRY-RUN] El coder cambiaría en {}: {}", repo, describePaths(changeSet));
-      return new AgentResult(AgentStatus.COMPLETED, "", List.of());
+      return finished(Outcome.DRY_RUN);
     }
 
     final Map<String, String> files = new LinkedHashMap<>();
@@ -205,13 +230,18 @@ public class CoderAgent implements Agent {
     final boolean success = message.content() != null && message.content().startsWith(SUCCESS_PREFIX);
     if (!success) {
       log.warn("El commit del coder no se aplicó en {}: {}", context.issueKey(), message.content());
-      return new AgentResult(AgentStatus.COMPLETED, "", List.of());
+      // El runtime describe el resultado de la tool como "<STATUS>: <contenido>"; DENIED es el
+      // guardarraíl, cualquier otro fallo es de GitHub.
+      final boolean denied = message.content() != null
+          && message.content().startsWith(ToolStatus.DENIED.name() + ": ");
+      return finished(denied ? Outcome.GUARD_REJECTED : Outcome.COMMIT_FAILED);
     }
     final Object summary = context.state().get(STATE_SUMMARY);
     final String text = summary == null || String.valueOf(summary).isBlank()
         ? "Cambios aplicados" : String.valueOf(summary);
     final Object changedFiles = context.state().getOrDefault(STATE_CHANGED_FILES, List.of());
-    return new AgentResult(AgentStatus.COMPLETED, text, List.of(), Map.of("changedFiles", changedFiles));
+    return new AgentResult(AgentStatus.COMPLETED, text, List.of(),
+        Map.of("changedFiles", changedFiles, DATA_OUTCOME, Outcome.CODED.name()));
   }
 
   // --- Generación con el LLM (misma lógica que el antiguo CoderService) ---
@@ -423,6 +453,15 @@ public class CoderAgent implements Agent {
     final String body = "Título: " + (summary == null ? "" : summary) + "\n\nDescripción:\n"
         + (description == null || description.isBlank() ? "(sin descripción)" : description);
     return promptShield.wrap("tarea de Jira", body);
+  }
+
+  /**
+   * Termina sin código, diciendo por qué. El resumen vacío se mantiene a propósito: es el criterio
+   * con el que el llamante decide poner el placeholder.
+   */
+  private static AgentResult finished(final Outcome outcome) {
+    return new AgentResult(AgentStatus.COMPLETED, "", List.of(),
+        Map.of(DATA_OUTCOME, outcome.name()));
   }
 
   private <T> T safeCall(final Supplier<T> supplier, final T fallback, final String issueKey) {

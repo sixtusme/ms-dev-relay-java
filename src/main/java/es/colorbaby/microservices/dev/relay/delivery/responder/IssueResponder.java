@@ -5,6 +5,12 @@ import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.config.JiraFilterProperties;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.config.ResponderProperties;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
 import es.colorbaby.microservices.dev.relay.delivery.pullrequest.PullRequestService;
 import es.colorbaby.microservices.dev.relay.intake.IssueEligibleEvent;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
@@ -56,6 +62,7 @@ public class IssueResponder {
   private final JiraFilterProperties filterProperties;
   private final PullRequestService pullRequestService;
   private final TaskRecorder taskRecorder;
+  private final TaskLifecycle taskLifecycle;
 
   @EventListener
   public void onIssueEligible(final IssueEligibleEvent event) {
@@ -74,11 +81,17 @@ public class IssueResponder {
       moveToInProgress(issueKey);
       markProcessed(issueKey);
       taskRecorder.record(issueKey, TaskEventType.IN_PROGRESS, "sixai", null);
-      pullRequestService.openForIssue(issueKey);
+      taskLifecycle.accept(issueKey, intakeDone(replyText));
+      // Se entregan en el orden en que vienen: la selección de repos, cada PR y, al final, el
+      // veredicto de la implementación.
+      pullRequestService.openForIssue(issueKey)
+          .forEach(outcome -> taskLifecycle.accept(issueKey, outcome));
     } catch (RuntimeException e) {
       // No se relanza: un fallo respondiendo no debe tumbar el ciclo de detección.
       log.error("No se pudo responder la issue {}", issueKey, e);
       reportError(issueKey, e);
+      taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.INTAKE, Recommendation.FAIL,
+          Evidence.of(EvidenceKind.REASON, rootMessage(e))));
     }
   }
 
@@ -196,6 +209,14 @@ public class IssueResponder {
         log.warn("No se pudo etiquetar el error en {}: {}", issueKey, e.getMessage());
       }
     }
+  }
+
+  /** INTAKE cerrada: la tarea está respondida y en curso. */
+  private static PhaseOutcome intakeDone(final String replyText) {
+    final Evidence evidence = replyText == null || replyText.isBlank()
+        ? Evidence.of(EvidenceKind.REASON, "puesta en curso sin comentario")
+        : Evidence.of(EvidenceKind.COMMENT, replyText);
+    return PhaseOutcome.of(TaskPhase.INTAKE, Recommendation.PASS, evidence);
   }
 
   private static String truncate(String value, int max) {
