@@ -49,12 +49,23 @@ public class PhaseEvidence {
 
   private String actor;
 
+  /** Causa reconocida del fallo, o null si no aplica o no se sabe todavía (ver {@link FailureReason}). */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "reason_code", length = 32)
+  private FailureReason reasonCode;
+
+  /** Qué sistema o quién la produjo, o null si no se clasificó (ver {@link EvidenceSource}). */
+  @Enumerated(EnumType.STRING)
+  @Column(length = 16)
+  private EvidenceSource source;
+
   @Column(name = "recorded_at", nullable = false)
   private Instant recordedAt = Instant.now();
 
   public PhaseEvidence(final Long taskPhaseId, final String repo,
       final Recommendation recommendation, final EvidenceKind kind, final String detail,
-      final String url, final String actor) {
+      final String url, final String actor, final FailureReason reasonCode,
+      final EvidenceSource source) {
     this.taskPhaseId = taskPhaseId;
     this.repo = repo;
     this.recommendation = recommendation;
@@ -62,6 +73,8 @@ public class PhaseEvidence {
     this.detail = truncate(detail, DETAIL_MAX);
     this.url = truncate(url, URL_MAX);
     this.actor = actor;
+    this.reasonCode = reasonCode;
+    this.source = source;
   }
 
   private static String truncate(final String value, final int max) {

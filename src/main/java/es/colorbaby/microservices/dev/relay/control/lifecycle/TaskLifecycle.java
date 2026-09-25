@@ -5,6 +5,7 @@ import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.activity.TaskRunRepository;
 import es.colorbaby.microservices.dev.relay.config.LifecycleProperties;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -49,7 +51,7 @@ public class TaskLifecycle {
       if (task.isEmpty()) {
         return Verdict.allow();
       }
-      return decide(issueKey, rules.canEnter(snapshot(task.get()), target));
+      return decide(issueKey, rules.canEnter(ruleSnapshot(task.get()), target));
     });
   }
 
@@ -63,7 +65,7 @@ public class TaskLifecycle {
       if (task.isEmpty()) {
         return Verdict.allow();
       }
-      final PhaseSnapshot snapshot = snapshot(task.get());
+      final PhaseSnapshot snapshot = ruleSnapshot(task.get());
       final Verdict verdict = decide(issueKey, rules.canAccept(snapshot, outcome));
       if (verdict.denied()) {
         return verdict;
@@ -77,18 +79,22 @@ public class TaskLifecycle {
    * Vuelve a implementar (ciclo de corrección): consume una iteración del presupuesto y abre
    * IMPLEMENTATION de nuevo. Con el presupuesto agotado, la tarea pasa a ESCALATED y se devuelve
    * denegado con la regla R3, en los dos modos.
+   *
+   * @param source quién pidió la corrección ({@code HUMAN} vía {@code /sixai}, {@code SYSTEM} tras
+   *               un fallo de build o despliegue), para que quede en la evidencia
    */
-  public Verdict reroute(final String issueKey, final String reason, final String actor) {
+  public Verdict reroute(final String issueKey, final String reason, final String actor,
+      final EvidenceSource source) {
     return safely(issueKey, "reroute", () -> {
       final Optional<TaskRun> live = liveTask(issueKey);
       if (live.isEmpty()) {
         return Verdict.allow();
       }
       final TaskRun task = live.get();
-      final PhaseSnapshot snapshot = snapshot(task);
+      final PhaseSnapshot snapshot = ruleSnapshot(task);
       final Verdict budget = rules.budget(task);
       if (budget.denied()) {
-        escalate(task, snapshot);
+        escalate(task, snapshot, budget.reason());
         return budget;
       }
       final Verdict verdict = decide(issueKey, rules.canReroute(snapshot));
@@ -98,9 +104,37 @@ public class TaskLifecycle {
       task.setRemediationIterations(task.getRemediationIterations() + 1);
       final TaskPhaseRun row = open(task, TaskPhase.IMPLEMENTATION);
       saveEvidence(row, PhaseOutcome.of(TaskPhase.IMPLEMENTATION, Recommendation.STARTED,
-          Evidence.of(EvidenceKind.REASON, reason)).by(actor));
+          Evidence.of(EvidenceKind.REASON, reason, source)).by(actor));
       return Verdict.allow();
     });
+  }
+
+  /**
+   * Fase actual, iteración e historial con evidencia de una tarea, para el panel y
+   * {@code /sixai STATUS}. A diferencia de {@link #check}/{@link #accept}/{@link #reroute}, lee
+   * cualquier tarea, viva o ya terminada: el historial de una tarea cerrada sigue siendo
+   * consultable.
+   */
+  @Transactional(readOnly = true)
+  public Optional<LifecycleSnapshot> snapshot(final String issueKey) {
+    return tasks.findByIssueKeyOrderByStartedAtDesc(issueKey).stream().findFirst()
+        .map(this::toSnapshot);
+  }
+
+  private LifecycleSnapshot toSnapshot(final TaskRun task) {
+    final List<TaskPhaseRun> rows = phases.findByTaskRunIdOrderByIdAsc(task.getId());
+    final List<PhaseHistoryEntry> history = rows.stream()
+        .map(row -> new PhaseHistoryEntry(row.getPhase(), row.getIteration(), row.getStatus(),
+            row.getDecidedBy(), row.getStartedAt(), row.getFinishedAt(),
+            evidences.findByTaskPhaseIdOrderByIdAsc(row.getId()).stream()
+                .map(EvidenceEntry::of)
+                .toList()))
+        .toList();
+    final TaskPhaseRun current = rows.isEmpty() ? null : rows.get(rows.size() - 1);
+    return new LifecycleSnapshot(task.getIssueKey(),
+        current == null ? null : current.getPhase(),
+        current == null ? null : current.getStatus(),
+        task.getRemediationIterations(), history);
   }
 
   private void apply(final TaskRun task, final PhaseSnapshot snapshot,
@@ -158,7 +192,7 @@ public class TaskLifecycle {
    * Lleva la tarea a un terminal. ESCALATED deja {@code task_run} en RUNNING a propósito: así sigue
    * en el panel como "Necesita una persona", igual que tras un GAVE_UP.
    */
-  private void terminate(final TaskRun task, final TaskPhase terminal) {
+  private TaskPhaseRun terminate(final TaskRun task, final TaskPhase terminal) {
     final PhaseStatus status = terminal == TaskPhase.DONE ? PhaseStatus.PASSED : PhaseStatus.FAILED;
     final TaskPhaseRun row =
         new TaskPhaseRun(task.getId(), terminal, task.getRemediationIterations(), status);
@@ -169,12 +203,17 @@ public class TaskLifecycle {
       task.close(terminal == TaskPhase.DONE ? TaskRun.DONE : TaskRun.FAILED);
     }
     tasks.save(task);
+    return row;
   }
 
-  private void escalate(final TaskRun task, final PhaseSnapshot snapshot) {
+  private void escalate(final TaskRun task, final PhaseSnapshot snapshot, final String reason) {
     final TaskPhaseRun current = snapshot.current();
     if (current == null || current.getPhase() != TaskPhase.ESCALATED) {
-      terminate(task, TaskPhase.ESCALATED);
+      final TaskPhaseRun row = terminate(task, TaskPhase.ESCALATED);
+      // Motivo con causa reconocida: es justo el caso de ejemplo de la propuesta de mejoras.
+      saveEvidence(row, PhaseOutcome.of(TaskPhase.ESCALATED, Recommendation.FAIL,
+          Evidence.of(EvidenceKind.DECISION, reason, FailureReason.CORRECTION_BUDGET_EXCEEDED,
+              EvidenceSource.SYSTEM)));
     }
   }
 
@@ -182,12 +221,13 @@ public class TaskLifecycle {
     if (outcome.evidence().isEmpty()) {
       // Sin evidencias igualmente consta la recomendación: es lo que cierra una fase por repos.
       evidences.save(new PhaseEvidence(row.getId(), outcome.repo(), outcome.recommendation(),
-          EvidenceKind.REASON, null, null, outcome.actor()));
+          EvidenceKind.REASON, null, null, outcome.actor(), null, null));
       return;
     }
     for (final Evidence item : outcome.evidence()) {
       evidences.save(new PhaseEvidence(row.getId(), outcome.repo(), outcome.recommendation(),
-          item.kind(), item.detail(), item.url(), outcome.actor()));
+          item.kind(), item.detail(), item.url(), outcome.actor(), item.reasonCode(),
+          item.source()));
     }
   }
 
@@ -222,7 +262,8 @@ public class TaskLifecycle {
     return tasks.findFirstByIssueKeyAndStatusOrderByStartedAtDesc(issueKey, TaskRun.RUNNING);
   }
 
-  private PhaseSnapshot snapshot(final TaskRun task) {
+  /** Foto para evaluar las reglas (distinta del {@link #snapshot(String)} público de lectura). */
+  private PhaseSnapshot ruleSnapshot(final TaskRun task) {
     return PhaseSnapshot.of(phases.findByTaskRunIdOrderByIdAsc(task.getId()));
   }
 
