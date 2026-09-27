@@ -14,6 +14,8 @@ import es.colorbaby.microservices.dev.relay.openapi.model.SixaiSessionDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.TaskDeploymentDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.TaskDetailDto;
 import es.colorbaby.microservices.dev.relay.openapi.model.TaskEventDto;
+import es.colorbaby.microservices.dev.relay.openapi.model.TaskPhaseDto;
+import es.colorbaby.microservices.dev.relay.openapi.model.TaskPhaseEvidenceDto;
 import es.colorbaby.microservices.dev.relay.panel.chat.ChatService;
 import es.colorbaby.microservices.dev.relay.panel.insight.InsightQuery;
 import es.colorbaby.microservices.dev.relay.panel.insight.InsightService;
@@ -90,6 +92,26 @@ public class SixaiApiDelegateImpl implements SixaiApiDelegate {
               .stage(deployment.stage())
               .status(deployment.status())
               .version(deployment.version())));
+          detail.phases().forEach(phase -> {
+            final TaskPhaseDto phaseDto = new TaskPhaseDto()
+                .phase(phase.phase())
+                .iteration(phase.iteration())
+                .status(phase.status())
+                .decidedBy(phase.decidedBy())
+                .startedAt(phase.startedAt())
+                .finishedAt(phase.finishedAt());
+            phase.evidence().forEach(evidence -> phaseDto.addEvidenceItem(new TaskPhaseEvidenceDto()
+                .repo(evidence.repo())
+                .recommendation(evidence.recommendation())
+                .kind(evidence.kind())
+                .detail(evidence.detail())
+                .url(evidence.url())
+                .actor(evidence.actor())
+                .reasonCode(evidence.reasonCode())
+                .source(evidence.source())
+                .recordedAt(evidence.recordedAt())));
+            dto.addPhasesItem(phaseDto);
+          });
           return dto;
         })
         .map(ResponseEntity::ok)

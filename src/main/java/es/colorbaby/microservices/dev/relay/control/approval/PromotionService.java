@@ -3,6 +3,13 @@ package es.colorbaby.microservices.dev.relay.control.approval;
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.config.GithubIntegrationProperties;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
 import es.colorbaby.microservices.dev.relay.delivery.pullrequest.RepoResolver;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentCoordinator;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentPhase;
@@ -37,6 +44,7 @@ public class PromotionService {
   private final DeploymentService deploymentService;
   private final TaskRecorder taskRecorder;
   private final GithubIntegrationProperties githubProperties;
+  private final TaskLifecycle taskLifecycle;
 
   /** Promociona a producción los repos de una issue. Best-effort: nunca relanza. */
   public void promote(final String issueKey, final JiraIssueDto issue) {
@@ -45,6 +53,11 @@ public class PromotionService {
       if (mainByRepo.isEmpty()) {
         jiraClient.addComment(issueKey, "No encuentro PRs de sixai mergeadas para esta tarea, "
             + "así que no hay nada que promocionar a producción.");
+        // Sin esto, PROMOTION (ya abierta por el CLIENT_TEST PASS que autorizó esto) se quedaría
+        // IN_PROGRESS para siempre: nada más la cerraría.
+        taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.PROMOTION, Recommendation.FAIL,
+            Evidence.of(EvidenceKind.REASON, "no hay PRs de sixai mergeadas que promocionar",
+                EvidenceSource.GITHUB)));
         return;
       }
       final String develop = githubProperties.getBaseBranch();
@@ -66,8 +79,15 @@ public class PromotionService {
         }
       }
       if (merged.isEmpty()) {
+        taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.PROMOTION, Recommendation.FAIL,
+            Evidence.of(EvidenceKind.REASON, "no se pudo mergear ningún repo a producción",
+                EvidenceSource.GITHUB)));
         return;
       }
+      // Evidencia de qué se mergeó, antes de que DeploymentService añada la suya (repos
+      // arrancados); la fase ya está abierta, así que esto solo añade evidencia a la misma fila.
+      taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.PROMOTION, Recommendation.STARTED,
+          Evidence.of(EvidenceKind.PR, "merges a producción: " + merged, EvidenceSource.GITHUB)));
       // El lote se crea con lo que realmente arranca; lo que no, se dice en la tarea.
       final DeploymentService.StartResult result =
           deploymentService.startBatch(issueKey, DeploymentPhase.PROD, null, merged);

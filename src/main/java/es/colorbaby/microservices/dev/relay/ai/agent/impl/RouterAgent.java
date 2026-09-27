@@ -42,7 +42,8 @@ public class RouterAgent implements Agent {
   // Fallback si, por lo que sea, la skill no está en el classpath.
   private static final String FALLBACK_SYSTEM_PROMPT =
       "Eres Sixai. Clasifica la orden en UNA de: PROMOTE_TO_PROD, REVISE, REDEPLOY, STATUS, "
-      + "CANCEL, UNKNOWN. Responde ÚNICAMENTE con JSON: {\"intent\": \"...\", \"detail\": \"...\"}.";
+      + "METRICS, CANCEL, UNKNOWN. Responde ÚNICAMENTE con JSON: {\"intent\": \"...\", \"detail\": "
+      + "\"...\"}.";
 
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
@@ -140,6 +141,9 @@ public class RouterAgent implements Agent {
     }
     if (contains(text, "cómo va", "como va", "estado", "status", "qué falta", "que falta")) {
       return CommandIntent.STATUS;
+    }
+    if (contains(text, "métricas", "metricas", "estadísticas", "estadisticas")) {
+      return CommandIntent.METRICS;
     }
     if (contains(text, "redespliega", "vuelve a desplegar", "redeploy")) {
       return CommandIntent.REDEPLOY;

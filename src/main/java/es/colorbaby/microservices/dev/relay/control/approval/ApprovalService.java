@@ -4,6 +4,14 @@ import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.config.ApprovalProperties;
 import es.colorbaby.microservices.dev.relay.config.GithubIntegrationProperties;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Verdict;
 import es.colorbaby.microservices.dev.relay.delivery.pullrequest.RepoResolver;
 import es.colorbaby.microservices.dev.relay.delivery.verification.VerificationService;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentBatchRepository;
@@ -48,6 +56,7 @@ public class ApprovalService {
   private final TaskRecorder taskRecorder;
   private final GithubIntegrationProperties githubProperties;
   private final ApprovalProperties properties;
+  private final TaskLifecycle taskLifecycle;
 
   /**
    * Aprobaciones que se están atendiendo ahora mismo. Cierra la ventana del doble clic: dos
@@ -108,10 +117,37 @@ public class ApprovalService {
           + "Corrige el fallo (o desactiva maestro.verification.block-approval) y vuelve a aprobar.");
       return;
     }
-    taskRecorder.record(issueKey, TaskEventType.APPROVED, actor(approvedBy),
+    // R1 formalizada: hoy en modo registro nunca deniega de verdad (block-approval sigue siendo
+    // el freno real, arriba); en modo estricto sí frena, por ejemplo si IMPLEMENTATION no está
+    // PASSED (PRs de solo placeholder).
+    final Verdict verdict = taskLifecycle.check(issueKey, TaskPhase.APPROVAL);
+    if (verdict.denied()) {
+      log.warn("Ciclo de vida deniega la aprobación de {}: {}", issueKey, verdict.reason());
+      jiraClient.addComment(issueKey, "⛔ No mergeo: " + verdict.reason() + ".");
+      return;
+    }
+    final String actor = actor(approvedBy);
+    taskRecorder.record(issueKey, TaskEventType.APPROVED, actor,
         "aprobado el merge de " + prByRepo.size() + " PR(s) a "
             + githubProperties.getBaseBranch());
+    taskLifecycle.accept(issueKey, approvalOutcome(issueKey, actor));
     mergeAll(issueKey, issue, prByRepo);
+  }
+
+  /**
+   * PASS de APPROVAL. Si la verificación falló pero no bloqueaba (arriba), queda constancia con
+   * una evidencia DECISION propia, en vez de perderse en que simplemente "se aprobó" (R1 de la
+   * spec, señalado en la revisión del paso 1).
+   */
+  private PhaseOutcome approvalOutcome(final String issueKey, final String actor) {
+    final boolean verificationFailed = verificationService.forIssue(issueKey).stream()
+        .anyMatch(run -> run.getStatus() == DeploymentStatus.FAILED);
+    final PhaseOutcome outcome = verificationFailed
+        ? PhaseOutcome.of(TaskPhase.APPROVAL, Recommendation.PASS,
+            Evidence.of(EvidenceKind.DECISION, "aprobado con verificación fallida por " + actor,
+                EvidenceSource.HUMAN))
+        : PhaseOutcome.of(TaskPhase.APPROVAL, Recommendation.PASS);
+    return outcome.by(actor);
   }
 
   /**
@@ -145,6 +181,12 @@ public class ApprovalService {
     if (branchByRepo.isEmpty()) {
       return;
     }
+    // Evidencia de qué se mergeó, antes de que DeploymentService añada la suya (repos arrancados);
+    // la fase ya está abierta desde el accept(APPROVAL PASS) de arriba, así que esto solo añade
+    // evidencia a la misma fila.
+    taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.DEPLOY_PRE, Recommendation.STARTED,
+        Evidence.of(EvidenceKind.PR, "merges a " + base + ": "
+            + String.join(", ", branchByRepo.keySet()), EvidenceSource.GITHUB)));
     // El lote se crea con lo que realmente arranca; lo que no, se dice en la tarea.
     final DeploymentService.StartResult result = deploymentService.startBatch(
         issueKey, DeploymentPhase.PRE, reporterAccountId(issue), branchByRepo);

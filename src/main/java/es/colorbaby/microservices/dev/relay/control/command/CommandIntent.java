@@ -19,6 +19,9 @@ public enum CommandIntent {
   /** Consulta de estado: responde, no actúa. */
   STATUS,
 
+  /** Métricas del ciclo de vida (no solo de esta tarea): responde, no actúa. */
+  METRICS,
+
   /** Abandonar el trabajo en curso. */
   CANCEL,
 

@@ -50,6 +50,9 @@ public class IssueTriggerServiceImpl implements IssueTriggerService {
       }
       // Tarea ya arrancada (En curso / TEST): no se re-arranca, se atienden sus comandos.
       if (commandProperties.isEnabled() && isCommandStatus(issue)) {
+        // Si la tarea está BLOCKED (el coder pidió una aclaración), el siguiente comentario nuevo
+        // se atiende como la respuesta ANTES de mirar si hay comandos: no es un comando en sí.
+        commandService.handlePendingAnswer(issue);
         commandService.handle(issue);
         return;
       }

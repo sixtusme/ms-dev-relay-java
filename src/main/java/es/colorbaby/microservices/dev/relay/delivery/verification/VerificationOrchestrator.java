@@ -2,8 +2,22 @@ package es.colorbaby.microservices.dev.relay.delivery.verification;
 
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
+import es.colorbaby.microservices.dev.relay.ai.agent.impl.PlannerAgent;
 import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.config.VerificationProperties;
+import es.colorbaby.microservices.dev.relay.control.correction.CorrectionService;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceEntry;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.FailureReason;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.LifecycleSnapshot;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseHistoryEntry;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseStatus;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentStatus;
 import es.colorbaby.microservices.dev.relay.jenkins.client.JenkinsClient;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
@@ -44,6 +58,9 @@ public class VerificationOrchestrator {
   private final TaskRecorder taskRecorder;
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
+  private final TaskLifecycle taskLifecycle;
+  private final CorrectionService correctionService;
+  private final PlannerAgent plannerAgent;
 
   /** Barrido periódico. El intervalo es {@code maestro.verification.poll-interval-ms}. */
   @Scheduled(fixedDelayString = "${maestro.verification.poll-interval-ms:30000}")
@@ -115,6 +132,98 @@ public class VerificationOrchestrator {
         run.getIssueKey());
     jiraClient.addComment(run.getIssueKey(), "✅ La PR de " + run.getRepo() + " (#"
         + run.getPrNumber() + ") compila correctamente.");
+    taskLifecycle.accept(run.getIssueKey(), PhaseOutcome.forRepo(TaskPhase.VERIFICATION,
+        Recommendation.PASS, run.getRepo(), Evidence.of(EvidenceKind.BUILD,
+            run.getBuildJob() + " #" + run.getBuildNumber() + " (PR #" + run.getPrNumber()
+                + ") compila", EvidenceSource.JENKINS)));
+
+    // Si este repo era el último que faltaba, el aggregate acaba de cerrar VERIFICATION en PASSED
+    // y avanzar a APPROVAL (todo en el accept() de arriba): es el momento de comprobar, solo una
+    // vez por tarea, si lo entregado cubre los criterios de PLAN (mejoras-senior §6). Si aún
+    // faltan otros repos por veredicto, el aggregate sigue sin cerrar y no se comprueba nada.
+    taskLifecycle.snapshot(run.getIssueKey()).ifPresent(this::checkAcceptanceCriteria);
+  }
+
+  /**
+   * Comprueba si lo entregado cubre los criterios de aceptación, solo la primera vez que se llama
+   * justo tras cerrar VERIFICATION en PASSED (VERIFICATION ya no es la fase actual: la tarea avanzó
+   * a APPROVAL en el mismo {@code accept()} que cerró la fase, así que se busca en el historial en
+   * vez de en {@link LifecycleSnapshot#current()}). Puramente informativo: nunca bloquea nada.
+   */
+  private void checkAcceptanceCriteria(final LifecycleSnapshot snapshot) {
+    if (!properties.isCheckAcceptanceCriteria()) {
+      return;
+    }
+    final PhaseHistoryEntry verification = lastVerification(snapshot);
+    if (verification == null || verification.status() != PhaseStatus.PASSED) {
+      return;
+    }
+    final String criteria = acceptanceCriteria(snapshot);
+    if (criteria == null) {
+      return;
+    }
+    final String changes = changesSummary(snapshot);
+    if (changes.isBlank()) {
+      return;
+    }
+    final PlannerAgent.AcceptanceCheck check =
+        plannerAgent.checkAcceptance(snapshot.issueKey(), criteria, changes);
+    if (check.met()) {
+      return;
+    }
+    log.info("Los criterios de aceptación de {} no parecen cubiertos: {}", snapshot.issueKey(),
+        check.explanation());
+    jiraClient.addComment(snapshot.issueKey(), "⚠️ El código compila, pero puede que no cubra "
+        + "todos los criterios de aceptación:\n\n" + check.explanation()
+        + "\n\nRevísalo antes de aprobar; sixai no bloquea la aprobación por esto.");
+    taskLifecycle.accept(snapshot.issueKey(), PhaseOutcome.of(TaskPhase.VERIFICATION,
+        Recommendation.PASS, Evidence.of(EvidenceKind.REVIEW,
+            "Posible criterio de aceptación no cubierto: " + check.explanation(),
+            FailureReason.ACCEPTANCE_CRITERIA_FAILED, EvidenceSource.AGENT)));
+  }
+
+  private static PhaseHistoryEntry lastVerification(final LifecycleSnapshot snapshot) {
+    final List<PhaseHistoryEntry> history = snapshot.history();
+    for (int i = history.size() - 1; i >= 0; i--) {
+      if (history.get(i).phase() == TaskPhase.VERIFICATION) {
+        return history.get(i);
+      }
+    }
+    return null;
+  }
+
+  /** Los criterios que PLAN capturó, o null si no se dedujo ninguno (nada que comprobar). */
+  private static String acceptanceCriteria(final LifecycleSnapshot snapshot) {
+    for (final PhaseHistoryEntry entry : snapshot.history()) {
+      if (entry.phase() != TaskPhase.PLAN) {
+        continue;
+      }
+      for (final EvidenceEntry evidence : entry.evidence()) {
+        if (evidence.kind() == EvidenceKind.PLAN && evidence.detail() != null
+            && evidence.detail().startsWith("Criterios de aceptación:")) {
+          return evidence.detail();
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Los resúmenes que el coder dejó de lo que implementó en cada repo, tal cual los escribió. */
+  private static String changesSummary(final LifecycleSnapshot snapshot) {
+    final StringBuilder text = new StringBuilder();
+    for (final PhaseHistoryEntry entry : snapshot.history()) {
+      if (entry.phase() != TaskPhase.IMPLEMENTATION) {
+        continue;
+      }
+      for (final EvidenceEntry evidence : entry.evidence()) {
+        if (evidence.kind() == EvidenceKind.REPORT && evidence.detail() != null
+            && !evidence.detail().isBlank()) {
+          text.append("- [").append(evidence.repo()).append("] ").append(evidence.detail())
+              .append('\n');
+        }
+      }
+    }
+    return text.toString();
   }
 
   private void finishFailure(final VerificationRun run, final String reason) {
@@ -130,6 +239,20 @@ public class VerificationOrchestrator {
     jiraClient.addComment(run.getIssueKey(), "⚠️ La PR de " + run.getRepo() + " (#"
         + run.getPrNumber() + ") NO compila.\n\n" + reason
         + "\n\nSe puede aprobar igualmente, pero conviene mirarlo antes de mergear a develop.");
+    taskLifecycle.accept(run.getIssueKey(), PhaseOutcome.forRepo(TaskPhase.VERIFICATION,
+        Recommendation.FAIL, run.getRepo(),
+        Evidence.of(EvidenceKind.BUILD, reason, FailureReason.BUILD_FAILED,
+            EvidenceSource.JENKINS)));
+
+    // Si este repo era el último que faltaba, el aggregate acaba de cerrar la fase en FAILED:
+    // es el momento de diagnosticar y enrutar la remediación (mejoras-senior §16). Si todavía
+    // faltan otros repos por dar veredicto, la fase sigue abierta y no se dispara nada aún.
+    taskLifecycle.snapshot(run.getIssueKey())
+        .filter(snapshot -> snapshot.phase() == TaskPhase.VERIFICATION
+            && snapshot.status() == PhaseStatus.FAILED)
+        .ifPresent(snapshot -> correctionService.triggeredByVerificationFailure(
+            run.getIssueKey(), run.getRepo(), run.getBranch(), run.getPrNumber(),
+            run.getBuildJob(), run.getBuildNumber()));
   }
 
   private String diagnose(final VerificationRun run) {

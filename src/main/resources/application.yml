@@ -317,6 +317,14 @@ maestro:
     max-cycles: ${MAESTRO_CORRECTION_MAX_CYCLES:3}
     auto-fix-on-failure: ${MAESTRO_CORRECTION_AUTO_FIX:true}   # si un fallo de PRE dispara la corrección sola
 
+  # Retro (mejoras-senior Fase 6): al llegar una tarea a DONE, si hizo falta corregir algo por el
+  # camino, se anota una lección corta en el AGENTS.md de cada repo tocado. Una tarea que salió
+  # bien a la primera no genera nada — no hay lección que anotar.
+  retro:
+    enabled: ${MAESTRO_RETRO_ENABLED:false}
+    dry-run: ${MAESTRO_RETRO_DRY_RUN:true}
+    target-file: ${MAESTRO_RETRO_TARGET_FILE:AGENTS.md}
+
   # Al arrancar la resolución de una tarea se crea /reports/<CODIGO>-<titulo> con los adjuntos
   # originales; al terminar el coder, se publica ahí el informe .md. Cada fichero se indexa en
   # BD: el panel lista contra la base y solo baja el contenido al abrir uno. Reutiliza el
@@ -374,6 +382,9 @@ maestro:
     max-attempts: ${MAESTRO_VERIFICATION_MAX_ATTEMPTS:60}   # por etapa, se reinicia de cola a build
     diagnose-on-failure: ${MAESTRO_VERIFICATION_DIAGNOSE:true}
     console-max-chars: ${MAESTRO_VERIFICATION_CONSOLE_MAX_CHARS:8000}
+    # Al compilar, comprueba además (informativo, nunca bloquea) si lo entregado cubre los
+    # criterios de aceptación que PLAN capturó. Requiere maestro.planner.enabled.
+    check-acceptance-criteria: ${MAESTRO_VERIFICATION_CHECK_ACCEPTANCE:true}
 
   # Calcado del pipeline real de Colorbaby: build y deploy son DOS jobs parametrizados.
   #   back/front/back_library_pipeline: compilan REPOSITORY+BRANCH y publican en Harbor.

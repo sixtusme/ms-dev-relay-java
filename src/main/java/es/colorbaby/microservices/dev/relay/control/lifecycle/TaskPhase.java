@@ -9,6 +9,7 @@ package es.colorbaby.microservices.dev.relay.control.lifecycle;
 public enum TaskPhase {
   INTAKE,
   REPO_SELECTION,
+  PLAN,
   IMPLEMENTATION,
   VERIFICATION,
   APPROVAL,
@@ -38,7 +39,7 @@ public enum TaskPhase {
    * responder.
    */
   public boolean failureIsTerminal() {
-    return this == INTAKE || this == REPO_SELECTION;
+    return this == INTAKE || this == REPO_SELECTION || this == PLAN;
   }
 
   public boolean isBefore(final TaskPhase other) {

@@ -253,13 +253,43 @@ public class TaskLifecycle {
     }
     log.warn("Ciclo de vida de {}: {} — {} ({})", issueKey, verdict.rule(), verdict.reason(),
         properties.isEnforce() ? "bloqueado" : "solo aviso");
-    taskRecorder.record(issueKey, TaskEventType.LIFECYCLE_VIOLATION, PhaseOutcome.SIXAI,
-        verdict.rule() + ": " + verdict.reason());
+    recordViolation(issueKey, verdict);
     return properties.isEnforce() ? verdict : Verdict.allow();
   }
 
+  /**
+   * Deja constancia del aviso en una transacción INDEPENDIENTE de la que está resolviendo
+   * {@code check}/{@code accept}/{@code reroute}: si este INSERT fallara (p. ej. un detalle
+   * demasiado largo, o cualquier otro percance de base de datos), no puede tumbar la transacción
+   * que lleva la escritura real del ciclo de vida — sería absurdo que un fallo al AVISAR de una
+   * violación acabara revirtiendo lo que en modo registro se había decidido "permitir" (menor
+   * pendiente `§7.4`). Misma receta que {@link #safely}: transacción propia y error capturado
+   * fuera de ella.
+   */
+  private void recordViolation(final String issueKey, final Verdict verdict) {
+    try {
+      final TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+      transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+      transaction.execute(status -> {
+        taskRecorder.record(issueKey, TaskEventType.LIFECYCLE_VIOLATION, PhaseOutcome.SIXAI,
+            verdict.rule() + ": " + verdict.reason());
+        return null;
+      });
+    } catch (RuntimeException e) {
+      log.warn("No se pudo anotar LIFECYCLE_VIOLATION de {}: {}", issueKey, e.getMessage());
+    }
+  }
+
+  /**
+   * Bloquea la fila de la tarea viva ({@code SELECT ... FOR UPDATE}) mientras dure la transacción
+   * de {@link #safely}: es lo que serializa a los dos hilos que de verdad pueden solaparse en esta
+   * tarea (el executor async que abre PRs y el sweeper de verificación/despliegue), para que el
+   * segundo en llegar espere y decida sobre el estado ya actualizado por el primero, en vez de
+   * sobre una foto obsoleta. Ver {@link TaskRunRepository#lockLiveTasks}.
+   */
   private Optional<TaskRun> liveTask(final String issueKey) {
-    return tasks.findFirstByIssueKeyAndStatusOrderByStartedAtDesc(issueKey, TaskRun.RUNNING);
+    final List<TaskRun> live = tasks.lockLiveTasks(issueKey, TaskRun.RUNNING);
+    return live.isEmpty() ? Optional.empty() : Optional.of(live.get(0));
   }
 
   /** Foto para evaluar las reglas (distinta del {@link #snapshot(String)} público de lectura). */

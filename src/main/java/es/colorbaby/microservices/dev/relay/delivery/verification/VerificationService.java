@@ -4,6 +4,13 @@ import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
 import es.colorbaby.microservices.dev.relay.config.VerificationProperties;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.FailureReason;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
 import es.colorbaby.microservices.dev.relay.deploy.DeploymentStatus;
 import es.colorbaby.microservices.dev.relay.jenkins.client.JenkinsClient;
 import java.util.List;
@@ -41,19 +48,21 @@ public class VerificationService {
    * @param repo     repositorio de GitHub
    * @param branch   rama de la PR, que es lo que se compila
    * @param prNumber número de la PR, para poder comentar el resultado en ella
+   * @return resultado de VERIFICATION para este repo: {@code STARTED} (encolado), {@code SKIPPED}
+   *     (sin job de build, verificación apagada o dry-run) o {@code FAIL} (no se pudo encolar)
    */
-  public void verify(final String issueKey, final String repo, final String branch,
+  public PhaseOutcome verify(final String issueKey, final String repo, final String branch,
       final int prNumber) {
     if (!properties.isEnabled()) {
-      return;
+      return skipped(repo, "verificación desactivada");
     }
     final Optional<String> buildJob = buildJobFor(repo);
     if (buildJob.isEmpty()) {
-      return;
+      return skipped(repo, "sin job de build configurado para " + repo);
     }
     if (properties.isDryRun()) {
       log.info("[DRY-RUN] Verificaría {}@{} con {}", repo, branch, buildJob.get());
-      return;
+      return skipped(repo, "dry-run: no se verifica");
     }
     try {
       final String queueUrl = jenkinsClient.triggerBuild(buildJob.get(), Map.of(
@@ -68,9 +77,20 @@ public class VerificationService {
       taskRecorder.record(issueKey, TaskEventType.VERIFY_STARTED, "sixai",
           repo + " #" + prNumber + " (" + branch + ")");
       log.info("Verificación de {}@{} encolada para {}: {}", repo, branch, issueKey, queueUrl);
+      return PhaseOutcome.forRepo(TaskPhase.VERIFICATION, Recommendation.STARTED, repo,
+          new Evidence(EvidenceKind.BUILD, buildJob.get() + " encolado", queueUrl,
+              EvidenceSource.JENKINS));
     } catch (RuntimeException e) {
       log.error("No se pudo verificar {}@{}: {}", repo, branch, e.getMessage());
+      return PhaseOutcome.forRepo(TaskPhase.VERIFICATION, Recommendation.FAIL, repo,
+          Evidence.of(EvidenceKind.REASON, "no se pudo encolar la verificación: " + e.getMessage(),
+              FailureReason.EXTERNAL_SERVICE_UNAVAILABLE, EvidenceSource.JENKINS));
     }
+  }
+
+  private static PhaseOutcome skipped(final String repo, final String reason) {
+    return PhaseOutcome.forRepo(TaskPhase.VERIFICATION, Recommendation.SKIPPED, repo,
+        Evidence.of(EvidenceKind.REASON, reason, EvidenceSource.SYSTEM));
   }
 
   /** Verificaciones de una tarea, de la más reciente a la más antigua. */

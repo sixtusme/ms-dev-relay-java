@@ -31,6 +31,9 @@ public final class LlmRoles {
   /** Revisar la calidad del ChangeSet que acaba de commitear el coder ({@code ReviewerAgent}). */
   public static final String REVIEWER = "reviewer";
 
+  /** Escribir la lección de una tarea completada en el AGENTS.md del repo ({@code RetroService}). */
+  public static final String RETRO = "retro";
+
   private LlmRoles() {
   }
 }

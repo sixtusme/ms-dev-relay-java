@@ -2,9 +2,16 @@ package es.colorbaby.microservices.dev.relay.deploy;
 
 import es.colorbaby.microservices.dev.relay.activity.TaskEventType;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
-import es.colorbaby.microservices.dev.relay.activity.TaskRun;
 import es.colorbaby.microservices.dev.relay.config.ApprovalProperties;
 import es.colorbaby.microservices.dev.relay.control.correction.CorrectionService;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
+import es.colorbaby.microservices.dev.relay.control.retro.RetroService;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,6 +43,8 @@ public class DeploymentCoordinator {
   private final TaskRecorder taskRecorder;
   private final CorrectionService correctionService;
   private final ApprovalProperties approvalProperties;
+  private final TaskLifecycle taskLifecycle;
+  private final RetroService retroService;
 
   /** Un despliegue terminó: si era el último del lote, cierra el lote y avisa. */
   @Transactional
@@ -56,21 +65,27 @@ public class DeploymentCoordinator {
     batches.save(batch);
 
     if (failed.isEmpty()) {
-      complete(batch);
+      complete(batch, siblings);
     } else {
       abort(batch, failed);
     }
   }
 
-  private void complete(final DeploymentBatch batch) {
+  private void complete(final DeploymentBatch batch, final List<DeploymentRun> siblings) {
     if (batch.getPhase() == DeploymentPhase.PROD) {
       jiraClient.addComment(batch.getIssueKey(), "🚀 Desplegado en PRODUCCIÓN. La tarea se queda "
           + "en " + approvalProperties.getTestStatus() + " para que lo verifiques.");
       log.info("{} desplegada en PROD", batch.getIssueKey());
       taskRecorder.record(batch.getIssueKey(), TaskEventType.DEPLOYED_PROD, "sixai", null);
-      taskRecorder.phase(batch.getIssueKey(), "PROD");
-      // Producción es el final del recorrido de sixai: aquí se cierra y se mide lo que tardó.
-      taskRecorder.finish(batch.getIssueKey(), TaskRun.DONE);
+      // PROMOTION PASSED avanza a DONE por sí solo: el lifecycle cierra la tarea (antes lo hacía
+      // taskRecorder.finish aquí, pisando además current_phase con el mismo taskRecorder.phase que
+      // ahora escribe el lifecycle).
+      taskLifecycle.accept(batch.getIssueKey(),
+          PhaseOutcome.of(TaskPhase.PROMOTION, Recommendation.PASS));
+      // La tarea ya está en DONE (terminal, no-RUNNING): la retro no toca el lifecycle, solo
+      // escribe en los repos si hubo algo que corregir por el camino (mejoras-senior Fase 6).
+      retroService.afterTaskCompleted(batch.getIssueKey(),
+          siblings.stream().map(DeploymentRun::getRepo).distinct().toList());
       return;
     }
     if (batch.getReporterAccountId() != null && !batch.getReporterAccountId().isBlank()) {
@@ -93,8 +108,10 @@ public class DeploymentCoordinator {
     taskRecorder.record(batch.getIssueKey(), TaskEventType.DEPLOYED_PRE, "sixai", null);
     taskRecorder.record(batch.getIssueKey(), TaskEventType.MOVED_TO_TEST, "sixai",
         "reasignada al informador");
-    // No se cierra la tarea: sigue viva a la espera de que el cliente la valide o pida cambios.
-    taskRecorder.phase(batch.getIssueKey(), approvalProperties.getTestStatus());
+    // DEPLOY_PRE PASSED avanza a CLIENT_TEST por sí solo; no se cierra la tarea, sigue viva a la
+    // espera de que el cliente la valide o pida cambios.
+    taskLifecycle.accept(batch.getIssueKey(),
+        PhaseOutcome.of(TaskPhase.DEPLOY_PRE, Recommendation.PASS));
   }
 
   private void abort(final DeploymentBatch batch, final List<DeploymentRun> failed) {
@@ -107,9 +124,13 @@ public class DeploymentCoordinator {
     log.error("Lote {} de {} fallido", batch.getPhase(), batch.getIssueKey());
     taskRecorder.record(batch.getIssueKey(), TaskEventType.FAILED, "sixai",
         "despliegue a " + batch.getPhase() + " fallido");
+    final TaskPhase target =
+        batch.getPhase() == DeploymentPhase.PRE ? TaskPhase.DEPLOY_PRE : TaskPhase.PROMOTION;
+    taskLifecycle.accept(batch.getIssueKey(), PhaseOutcome.of(target, Recommendation.FAIL,
+        Evidence.of(EvidenceKind.REASON, detail, EvidenceSource.JENKINS)));
 
     // Solo se auto-corrige lo que falla camino de PRE. Un fallo en PRODUCCIÓN no se toca solo:
-    // ahí la decisión es de una persona.
+    // ahí la decisión es de una persona (R4 de la spec: PROMOTION nunca se corrige sola).
     if (batch.getPhase() == DeploymentPhase.PRE) {
       correctionService.triggeredByFailure(batch.getIssueKey(), detail);
     }

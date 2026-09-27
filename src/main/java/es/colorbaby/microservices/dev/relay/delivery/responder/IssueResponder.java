@@ -7,6 +7,7 @@ import es.colorbaby.microservices.dev.relay.config.LlmProperties;
 import es.colorbaby.microservices.dev.relay.config.ResponderProperties;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
@@ -83,15 +84,15 @@ public class IssueResponder {
       taskRecorder.record(issueKey, TaskEventType.IN_PROGRESS, "sixai", null);
       taskLifecycle.accept(issueKey, intakeDone(replyText));
       // Se entregan en el orden en que vienen: la selección de repos, cada PR y, al final, el
-      // veredicto de la implementación.
-      pullRequestService.openForIssue(issueKey)
-          .forEach(outcome -> taskLifecycle.accept(issueKey, outcome));
+      // veredicto de la implementación y de la verificación. En cuanto se producen, no al final:
+      // el barrido de Jenkins corre en su propio hilo y puede adelantarse.
+      pullRequestService.openForIssue(issueKey, outcome -> taskLifecycle.accept(issueKey, outcome));
     } catch (RuntimeException e) {
       // No se relanza: un fallo respondiendo no debe tumbar el ciclo de detección.
       log.error("No se pudo responder la issue {}", issueKey, e);
       reportError(issueKey, e);
       taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.INTAKE, Recommendation.FAIL,
-          Evidence.of(EvidenceKind.REASON, rootMessage(e))));
+          Evidence.of(EvidenceKind.REASON, rootMessage(e), EvidenceSource.SYSTEM)));
     }
   }
 

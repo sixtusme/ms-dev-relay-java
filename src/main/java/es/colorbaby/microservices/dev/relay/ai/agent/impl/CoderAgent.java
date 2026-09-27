@@ -92,8 +92,18 @@ public class CoderAgent implements Agent {
       + "solo JSON: {\"read\": [\"ruta1\"]}.";
   private static final String FALLBACK_GENERATE_PROMPT =
       "Eres el coder de Sixai. Implementa la tarea. Responde solo JSON: {\"summary\": \"...\", "
-      + "\"changes\": [{\"path\": \"...\", \"action\": \"CREATE|UPDATE|DELETE\", \"content\": "
-      + "\"...\"}]}. Para DELETE omite \"content\" (o déjalo vacío): no hace falta.";
+      + "\"changes\": [...]}. Cada cambio es uno de estos tres tipos. CREATE (fichero nuevo): "
+      + "{\"path\": \"...\", \"action\": \"CREATE\", \"content\": \"contenido completo\"}. PATCH "
+      + "(edición pequeña y localizada de un fichero EXISTENTE que ya has leído — el tipo "
+      + "preferido para tocar poco): {\"path\": \"...\", \"action\": \"PATCH\", \"search\": "
+      + "\"fragmento EXACTO tal cual aparece en el fichero, que aparezca UNA sola vez\", "
+      + "\"replace\": \"con qué se sustituye\"}. UPDATE (solo si de verdad hace falta reescribir "
+      + "el fichero entero, por ejemplo una reestructuración grande): {\"path\": \"...\", "
+      + "\"action\": \"UPDATE\", \"content\": \"contenido completo\"}. DELETE: {\"path\": \"...\", "
+      + "\"action\": \"DELETE\"} (sin \"content\"). Si de verdad no puedes avanzar sin que alguien "
+      + "te aclare algo que no está ni en la tarea ni en el repo, responde en su lugar "
+      + "{\"question\": \"...\"} con una sola pregunta concreta, en vez de adivinar o dejar el "
+      + "trabajo a medias.";
 
   private final LlmClient llmClient;
   private final LlmProperties llmProperties;
@@ -117,7 +127,7 @@ public class CoderAgent implements Agent {
   @Override
   public AgentResult execute(final AgentContext context) {
     if (!properties.isEnabled() || !llmProperties.isEnabled()) {
-      return finished(Outcome.DISABLED);
+      return finished(context, Outcome.DISABLED);
     }
 
     final Optional<AgentMessage> commitMessage = findMessage(context, GITHUB_COMMIT);
@@ -177,26 +187,33 @@ public class CoderAgent implements Agent {
   private AgentResult generateAndRequestCommit(
       final AgentContext context, final List<String> tree, final Map<String, String> readContext) {
     final String task = task(context);
-    final ChangeSet changeSet;
+    final JsonNode root;
     try {
-      changeSet = generateChanges(context, task, tree, readContext);
+      root = parseJson(callGenerate(context, task, tree, readContext));
     } catch (LlmTruncatedException e) {
       // El modelo SÍ estaba escribiendo la solución y se le acabó el techo: no es "sin cambios".
       log.error("El coder se quedó sin tokens en {}: {}", context.issueKey(), e.getMessage());
-      return finished(Outcome.TRUNCATED);
+      return finished(context, Outcome.TRUNCATED);
     } catch (RuntimeException e) {
       log.warn("El coder falló en {}: {}", context.issueKey(), e.getMessage());
-      return finished(Outcome.LLM_ERROR);
+      return finished(context, Outcome.LLM_ERROR);
     }
 
+    final String question = root == null ? null : root.path("question").asText(null);
+    if (question != null && !question.isBlank()) {
+      log.info("El coder pide una aclaración en {}: {}", context.issueKey(), question);
+      return new AgentResult(AgentStatus.NEEDS_INPUT, question, List.of());
+    }
+
+    final ChangeSet changeSet = toChangeSet(root, context);
     final String repo = requireState(context, "repo");
     if (changeSet.isEmpty()) {
       log.info("El coder no propuso cambios aplicables para {} en {}", context.issueKey(), repo);
-      return finished(Outcome.NO_CHANGES);
+      return finished(context, Outcome.NO_CHANGES);
     }
     if (properties.isDryRun()) {
       log.info("[DRY-RUN] El coder cambiaría en {}: {}", repo, describePaths(changeSet));
-      return finished(Outcome.DRY_RUN);
+      return finished(context, Outcome.DRY_RUN);
     }
 
     final Map<String, String> files = new LinkedHashMap<>();
@@ -234,19 +251,20 @@ public class CoderAgent implements Agent {
       // guardarraíl, cualquier otro fallo es de GitHub.
       final boolean denied = message.content() != null
           && message.content().startsWith(ToolStatus.DENIED.name() + ": ");
-      return finished(denied ? Outcome.GUARD_REJECTED : Outcome.COMMIT_FAILED);
+      return finished(context, denied ? Outcome.GUARD_REJECTED : Outcome.COMMIT_FAILED);
     }
     final Object summary = context.state().get(STATE_SUMMARY);
     final String text = summary == null || String.valueOf(summary).isBlank()
         ? "Cambios aplicados" : String.valueOf(summary);
     final Object changedFiles = context.state().getOrDefault(STATE_CHANGED_FILES, List.of());
     return new AgentResult(AgentStatus.COMPLETED, text, List.of(),
-        Map.of("changedFiles", changedFiles, DATA_OUTCOME, Outcome.CODED.name()));
+        Map.of("changedFiles", changedFiles, DATA_OUTCOME, Outcome.CODED.name(),
+            "branch", branchOf(context)));
   }
 
   // --- Generación con el LLM (misma lógica que el antiguo CoderService) ---
 
-  private ChangeSet generateChanges(final AgentContext context, final String task,
+  private String callGenerate(final AgentContext context, final String task,
       final List<String> tree, final Map<String, String> readContext) {
     final StringBuilder user = new StringBuilder();
     user.append("Tarea:\n").append(task).append("\n\nÁrbol del repo:\n")
@@ -259,11 +277,26 @@ public class CoderAgent implements Agent {
             .append(entry.getValue()).append("\n");
       }
     }
+    appendAnswer(context, user);
     appendKnowledge(context, user);
     final String systemPrompt = skillPrompt(SKILL_GENERATE, FALLBACK_GENERATE_PROMPT);
-    final String output = llmClient.complete(
+    return llmClient.complete(
         LlmRequest.ofComplete(systemPrompt, user.toString(), LlmRoles.CODER, context.issueKey()));
-    return toChangeSet(output);
+  }
+
+  /**
+   * Si el coder ya preguntó algo y una persona contestó (la ejecución se retoma tras
+   * {@code NEEDS_INPUT}), añade esa conversación al prompt: sin esto, el modelo no vería la
+   * respuesta y podría volver a preguntar lo mismo.
+   */
+  private void appendAnswer(final AgentContext context, final StringBuilder user) {
+    final Optional<AgentMessage> question = findMessage(context, "agent.question");
+    final Optional<AgentMessage> answer = findMessage(context, "human.answer");
+    if (question.isEmpty() || answer.isEmpty()) {
+      return;
+    }
+    user.append("\n\nPreguntaste:\n").append(question.get().content())
+        .append("\n\nTe han contestado:\n").append(answer.get().content());
   }
 
   /**
@@ -308,8 +341,7 @@ public class CoderAgent implements Agent {
     }
   }
 
-  private ChangeSet toChangeSet(final String output) {
-    final JsonNode root = parseJson(output);
+  private ChangeSet toChangeSet(final JsonNode root, final AgentContext context) {
     if (root == null) {
       return new ChangeSet("", List.of());
     }
@@ -321,7 +353,18 @@ public class CoderAgent implements Agent {
         if (path == null || path.isBlank()) {
           continue;
         }
-        final FileChange.ChangeType type = changeType(node.path("action").asText(""));
+        final String action = node.path("action").asText("");
+        if ("PATCH".equalsIgnoreCase(action)) {
+          final FileChange patched = patchChange(path.strip(), node, context);
+          if (patched != null) {
+            changes.add(patched);
+          }
+          if (changes.size() >= properties.getMaxChanges()) {
+            break;
+          }
+          continue;
+        }
+        final FileChange.ChangeType type = changeType(action);
         final String content = node.path("content").asText(null);
         // DELETE no necesita contenido; CREATE/UPDATE sin contenido no es un cambio aplicable.
         if (type != FileChange.ChangeType.DELETE && content == null) {
@@ -344,6 +387,46 @@ public class CoderAgent implements Agent {
       return FileChange.ChangeType.DELETE;
     }
     return FileChange.ChangeType.UPDATE;
+  }
+
+  /**
+   * Resuelve un {@code PATCH} a un {@code UPDATE} con el contenido completo ya parcheado — el
+   * commit real sigue siendo upsert de fichero entero (no cambia el tool ni el guardarraíl), esto
+   * solo decide CON QUÉ contenido. Solo aplica si {@code search} aparece EXACTAMENTE UNA vez en lo
+   * que el coder ya leyó: nada de coincidencia difusa ni de "la más parecida", que es donde un
+   * parche puede corromper un fichero real sin que nadie se entere hasta mirarlo a mano. Si no
+   * aplica limpio, se descarta ese cambio (best-effort, igual que un CREATE/UPDATE sin contenido).
+   *
+   * <p>Lee el contenido COMPLETO del mensaje de la tool, no el {@code readContext} del prompt: ese
+   * se trunca por el principio para ficheros grandes ({@link #collectReadContext}), y reconstruir
+   * el fichero a partir de un trozo truncado lo dejaría truncado también.
+   */
+  private FileChange patchChange(final String path, final JsonNode node, final AgentContext context) {
+    final String original = findMessage(context, GITHUB_READ_FILE + ":" + path)
+        .map(this::unwrapSuccess)
+        .orElse(null);
+    if (original == null) {
+      log.warn("PATCH de {} descartado: el coder no había leído ese fichero", path);
+      return null;
+    }
+    final String search = node.path("search").asText("");
+    if (search.isEmpty()) {
+      log.warn("PATCH de {} descartado: sin \"search\"", path);
+      return null;
+    }
+    final String replace = node.path("replace").asText("");
+    final int first = original.indexOf(search);
+    if (first < 0) {
+      log.warn("PATCH de {} descartado: el fragmento a buscar no aparece en el fichero leído", path);
+      return null;
+    }
+    if (original.indexOf(search, first + search.length()) >= 0) {
+      log.warn("PATCH de {} descartado: el fragmento a buscar aparece más de una vez (ambiguo)", path);
+      return null;
+    }
+    final String patched = original.substring(0, first) + replace
+        + original.substring(first + search.length());
+    return new FileChange(path, FileChange.ChangeType.UPDATE, patched);
   }
 
   private List<String> parseReadList(final String output, final List<String> tree) {
@@ -457,11 +540,19 @@ public class CoderAgent implements Agent {
 
   /**
    * Termina sin código, diciendo por qué. El resumen vacío se mantiene a propósito: es el criterio
-   * con el que el llamante decide poner el placeholder.
+   * con el que el llamante decide poner el placeholder. Lleva también la rama: es la única pieza
+   * de estado que quien llama (fuera del {@code AgentContext}, interno al runtime) necesita para
+   * poder terminar su parte (placeholder + PR) tanto en la pasada normal como al reanudar tras
+   * {@code NEEDS_INPUT}.
    */
-  private static AgentResult finished(final Outcome outcome) {
+  private static AgentResult finished(final AgentContext context, final Outcome outcome) {
     return new AgentResult(AgentStatus.COMPLETED, "", List.of(),
-        Map.of(DATA_OUTCOME, outcome.name()));
+        Map.of(DATA_OUTCOME, outcome.name(), "branch", branchOf(context)));
+  }
+
+  private static String branchOf(final AgentContext context) {
+    final Object branch = context.state().get("branch");
+    return branch == null ? "" : String.valueOf(branch);
   }
 
   private <T> T safeCall(final Supplier<T> supplier, final T fallback, final String issueKey) {

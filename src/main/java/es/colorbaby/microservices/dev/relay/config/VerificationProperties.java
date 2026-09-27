@@ -44,6 +44,13 @@ public class VerificationProperties {
   /** Si al fallar la verificación se comenta el diagnóstico del LLM en la PR. */
   private boolean diagnoseOnFailure = true;
 
+  /**
+   * Si al PASAR la verificación (compila) se comprueba además si lo entregado cubre los criterios
+   * de aceptación de PLAN (mejoras-senior Fase 6). Puramente informativo: nunca bloquea la
+   * aprobación, solo avisa en la tarea si el planner cree que falta algo.
+   */
+  private boolean checkAcceptanceCriteria = true;
+
   /** Cuánta consola se le pasa al modelo para diagnosticar. */
   @Positive
   private int consoleMaxChars = 8000;

@@ -13,6 +13,9 @@ import es.colorbaby.microservices.dev.relay.ai.tool.ToolRegistry;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolArguments;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolContext;
 import es.colorbaby.microservices.dev.relay.ai.tool.record.ToolResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.colorbaby.microservices.dev.relay.ai.tool.state.ToolStatus;
 import es.colorbaby.microservices.dev.relay.config.DiagnosticianProperties;
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
@@ -23,6 +26,7 @@ import es.colorbaby.microservices.dev.relay.ai.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.ai.llm.LlmRequest;
 import es.colorbaby.microservices.dev.relay.ai.llm.LlmRoles;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +54,7 @@ public class DiagnosticianAgent implements Agent {
 
   private static final String SKILL_DEPLOYMENT = "diagnose-deployment";
   private static final String SKILL_CONSOLE = "diagnose-console";
+  private static final String SKILL_ROOT_CAUSE = "diagnose-root-cause";
 
   private static final String HARBOR_SCAN = "harbor.scan";
   private static final String INFRA_CONTAINER_STATUS = "infra.container_status";
@@ -62,6 +67,15 @@ public class DiagnosticianAgent implements Agent {
   private static final String FALLBACK_CONSOLE_PROMPT =
       "Eres Sixai. A partir de la consola de un job de Jenkins que ha fallado, resume en pocas "
       + "frases la causa más probable. No inventes.";
+  private static final String FALLBACK_ROOT_CAUSE_PROMPT =
+      "Eres Sixai. A partir de la consola de un build que ha fallado al verificar una PR, "
+      + "clasifica la causa más probable. Responde SOLO JSON: {\"category\": "
+      + "\"CODE|PLAN|CRITERIA|INFRA\", \"explanation\": \"...\"}. CODE: el código que escribió el "
+      + "coder está mal (bug, sintaxis, algo que se rompió). PLAN: el enfoque general estaba mal "
+      + "planteado, hace falta replantear antes de volver a tocar código. CRITERIA: falta "
+      + "información o el criterio de la tarea no está claro, hace falta que una persona decida. "
+      + "INFRA: el fallo es de la infraestructura de build (timeout, dependencia externa caída, "
+      + "runner sin recursos…), no del código. Si dudas entre dos, prefiere CODE. No inventes.";
 
   private final DiagnosticianProperties diagnosticianProperties;
   private final DeploymentProperties deploymentProperties;
@@ -69,6 +83,16 @@ public class DiagnosticianAgent implements Agent {
   private final LlmProperties llmProperties;
   private final SkillRegistry skillRegistry;
   private final ToolRegistry toolRegistry;
+  private final ObjectMapper objectMapper;
+
+  /** Causa raíz de un fallo, para poder enrutar la remediación (mejoras-senior §16). */
+  public enum RootCauseCategory {
+    CODE, PLAN, CRITERIA, INFRA
+  }
+
+  /** @param explanation por qué, en pocas frases; se usa tal cual en el aviso a la tarea */
+  public record RootCause(RootCauseCategory category, String explanation) {
+  }
 
   @Override
   public String id() {
@@ -106,6 +130,59 @@ public class DiagnosticianAgent implements Agent {
     } catch (RuntimeException e) {
       log.warn("No se pudo diagnosticar el despliegue de {}: {}", run.getRepo(), e.getMessage());
       return "\n\nEvidencia recogida:\n" + evidence;
+    }
+  }
+
+  /**
+   * Clasifica por qué falló la verificación de una PR, para poder enrutar la remediación: CODE al
+   * coder, PLAN al planner, CRITERIA a una persona, INFRA a un reintento sin tocar código.
+   * Best-effort: sin IA, o si el modelo no responde JSON válido, CODE es el valor por defecto (es
+   * el camino ya existente antes de esta clasificación).
+   */
+  public RootCause classifyVerificationFailure(final String jobPath, final int buildNumber,
+      final String issueKey) {
+    if (!llmProperties.isEnabled()) {
+      return new RootCause(RootCauseCategory.CODE, "");
+    }
+    try {
+      final String console = invokeTool(JENKINS_GET_CONSOLE,
+          Map.of("jobPath", jobPath, "buildNumber", buildNumber), issueKey)
+          .map(ToolResult::content).orElse("");
+      final String tail = tail(console, deploymentProperties.getConsoleMaxChars());
+      final String output = llmClient.complete(LlmRequest.of(
+          skillPrompt(SKILL_ROOT_CAUSE, FALLBACK_ROOT_CAUSE_PROMPT), tail, LlmRoles.DIAGNOSE,
+          issueKey));
+      return parseRootCause(output);
+    } catch (RuntimeException e) {
+      log.warn("No se pudo clasificar la causa del fallo en {}: {}", jobPath, e.getMessage());
+      return new RootCause(RootCauseCategory.CODE, "");
+    }
+  }
+
+  private RootCause parseRootCause(final String output) {
+    if (output == null || output.isBlank()) {
+      return new RootCause(RootCauseCategory.CODE, "");
+    }
+    final int start = output.indexOf('{');
+    final int end = output.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+      return new RootCause(RootCauseCategory.CODE, output.strip());
+    }
+    try {
+      final JsonNode root = objectMapper.readTree(output.substring(start, end + 1));
+      final String explanation = root.path("explanation").asText("");
+      return new RootCause(categoryOf(root.path("category").asText("")), explanation);
+    } catch (JsonProcessingException e) {
+      log.warn("Clasificación de causa raíz no es JSON válido: {}", e.getMessage());
+      return new RootCause(RootCauseCategory.CODE, output.strip());
+    }
+  }
+
+  private static RootCauseCategory categoryOf(final String value) {
+    try {
+      return RootCauseCategory.valueOf(value.strip().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException e) {
+      return RootCauseCategory.CODE;
     }
   }
 
