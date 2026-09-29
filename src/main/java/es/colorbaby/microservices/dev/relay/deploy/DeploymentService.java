@@ -1,6 +1,14 @@
 package es.colorbaby.microservices.dev.relay.deploy;
 
 import es.colorbaby.microservices.dev.relay.config.DeploymentProperties;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Evidence;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceKind;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.EvidenceSource;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.PhaseOutcome;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Recommendation;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
+import es.colorbaby.microservices.dev.relay.control.lifecycle.Verdict;
 import es.colorbaby.microservices.dev.relay.jenkins.client.JenkinsClient;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,19 +35,20 @@ public class DeploymentService {
 
   /** Qué arrancó y qué se quedó fuera, para poder contarlo en la tarea. */
   public record StartResult(int started, List<String> skipped) {
-
-    public boolean any() {
-      return started > 0;
-    }
   }
 
   private final JenkinsClient jenkinsClient;
   private final DeploymentBatchRepository batches;
   private final DeploymentRunRepository runs;
   private final DeploymentProperties properties;
+  private final TaskLifecycle taskLifecycle;
 
   /**
    * Lanza el build de cada repo hacia un entorno y deja el lote persistido.
+   *
+   * <p>Es el único choque de PRE y PROD (aprobación y promoción llegan aquí), así que aquí van
+   * también el {@code check} del ciclo de vida y el {@code accept} de su arranque: así no se le
+   * escapa a un camino nuevo que alguien añada mañana, igual que la comprobación de lote vivo.
    *
    * @param branchByRepo repo de GitHub → rama a compilar (develop en PRE, main/master en PROD)
    * @return cuántos arrancaron y cuáles se quedaron fuera
@@ -47,12 +56,15 @@ public class DeploymentService {
   @Transactional
   public StartResult startBatch(final String issueKey, final DeploymentPhase phase,
       final String reporterAccountId, final Map<String, String> branchByRepo) {
+    final TaskPhase target = targetPhase(phase);
     if (!properties.isEnabled()) {
       return new StartResult(0, List.copyOf(branchByRepo.keySet()));
     }
     if (properties.isDryRun()) {
       branchByRepo.forEach((repo, branch) ->
           log.info("[DRY-RUN] Compilaría {}@{} y desplegaría en {}", repo, branch, phase));
+      taskLifecycle.accept(issueKey, PhaseOutcome.of(target, Recommendation.SKIPPED,
+          Evidence.of(EvidenceKind.REASON, "dry-run: no se despliega", EvidenceSource.SYSTEM)));
       return new StartResult(0, List.of());
     }
     // Una tarea no puede tener dos despliegues vivos a la vez: serían dos builds del mismo repo
@@ -62,6 +74,12 @@ public class DeploymentService {
     if (!batches.findByIssueKeyAndStatus(issueKey, DeploymentStatus.RUNNING).isEmpty()) {
       log.warn("{} ya tiene un despliegue en curso; no se arranca otro ({})", issueKey, phase);
       return new StartResult(0, List.of());
+    }
+    final Verdict verdict = taskLifecycle.check(issueKey, target);
+    if (verdict.denied()) {
+      log.warn("Ciclo de vida deniega el despliegue a {} para {}: {}",
+          phase, issueKey, verdict.reason());
+      return new StartResult(0, List.copyOf(branchByRepo.keySet()));
     }
 
     final DeploymentBatch batch =
@@ -81,8 +99,20 @@ public class DeploymentService {
       batch.setStatus(DeploymentStatus.FAILED);
       batches.save(batch);
       log.warn("Ningún despliegue arrancó para {} ({}); no queda lote esperando", issueKey, phase);
+      taskLifecycle.accept(issueKey, PhaseOutcome.of(target, Recommendation.FAIL,
+          Evidence.of(EvidenceKind.REASON, "ningún repo pudo arrancar el despliegue",
+              EvidenceSource.JENKINS)));
+    } else {
+      taskLifecycle.accept(issueKey, PhaseOutcome.of(target, Recommendation.STARTED,
+          Evidence.of(EvidenceKind.REASON, started + " de " + branchByRepo.size()
+              + " repo(s) arrancados" + (skipped.isEmpty() ? "" : "; fuera: " + skipped),
+              EvidenceSource.JENKINS)));
     }
     return new StartResult(started, skipped);
+  }
+
+  private static TaskPhase targetPhase(final DeploymentPhase phase) {
+    return phase == DeploymentPhase.PRE ? TaskPhase.DEPLOY_PRE : TaskPhase.PROMOTION;
   }
 
   private boolean startOne(final DeploymentBatch batch, final String issueKey, final String repoName,

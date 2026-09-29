@@ -1,7 +1,5 @@
 package es.colorbaby.microservices.dev.relay.activity;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,9 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Deja constancia de lo que hace sixai: abre la tarea, apunta cada hito y la cierra midiendo cuánto
- * tardó. Es la memoria de la aplicación — sin ella no se puede responder qué se hizo, quién lo pidió
- * ni cuánto costó.
+ * Deja constancia de lo que hace sixai: abre la tarea y apunta cada hito. Es la memoria de la
+ * aplicación — sin ella no se puede responder qué se hizo ni quién lo pidió. El cierre de la tarea
+ * (con cuánto tardó) lo decide el ciclo de vida ({@code TaskLifecycle}), no este componente.
  *
  * <p><b>Todo es best-effort:</b> registrar nunca puede tumbar el trabajo real. Si falla la base de
  * datos, se loguea y el flujo sigue; es preferible perder una traza que dejar una tarea a medias.
@@ -58,12 +56,6 @@ public class TaskRecorder {
     });
   }
 
-  /** Apunta en qué fase está (PRE, TEST, PROD…). */
-  @Transactional
-  public void phase(final String issueKey, final String phase) {
-    update(issueKey, task -> task.setCurrentPhase(phase));
-  }
-
   /** Añade un hito a la línea de tiempo. */
   @Transactional
   public void record(final String issueKey, final TaskEventType type, final String actor,
@@ -75,17 +67,6 @@ public class TaskRecorder {
     } catch (RuntimeException e) {
       log.warn("No se pudo registrar el evento {} de {}: {}", type, issueKey, e.getMessage());
     }
-  }
-
-  /** Cierra la tarea midiendo cuánto tardó desde que se cogió. */
-  @Transactional
-  public void finish(final String issueKey, final String status) {
-    update(issueKey, task -> {
-      final Instant now = Instant.now();
-      task.setStatus(status);
-      task.setFinishedAt(now);
-      task.setDurationMs(Duration.between(task.getStartedAt(), now).toMillis());
-    });
   }
 
   /** Tarea viva de una issue, si la hay. */

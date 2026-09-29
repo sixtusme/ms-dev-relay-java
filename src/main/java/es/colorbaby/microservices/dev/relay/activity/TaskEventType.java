@@ -61,6 +61,17 @@ public enum TaskEventType {
   /** Se agotaron los ciclos de corrección: sixai para y escala a una persona. */
   GAVE_UP,
 
+  /** Un agente (hoy solo el coder) necesita que alguien conteste antes de poder seguir. */
+  AGENT_NEEDS_INPUT,
+
+  /** Ha llegado la respuesta y el agente ha retomado desde donde se quedó. */
+  AGENT_RESUMED,
+
+  /**
+   * El ciclo de vida detectó algo que el modo estricto habría frenado (o frenó). No cambia la
+   * etapa de la tarea: es un aviso.
+   */
+  LIFECYCLE_VIOLATION,
   /** Algo falló y se abortó. */
   FAILED
 }

@@ -1,13 +1,16 @@
 package es.colorbaby.microservices.dev.relay.config;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Configuración de qué hace Sixai al detectar una tarea elegible ({@code maestro.responder}).
  */
 @ConfigurationProperties(prefix = "maestro.responder")
+@Validated
 @Getter
 @Setter
 public class ResponderProperties {
@@ -16,6 +19,7 @@ public class ResponderProperties {
    * Nombre del estado al que se mueve la tarea. Debe coincidir exacto con el flujo de trabajo de
    * Jira. Si no coincide, no se mueve (se loguea) pero el comentario se publica igual.
    */
+  @NotBlank
   private String transitionTo = "En curso";
 
   /** Comentario que se publica cuando la IA está apagada ({@code maestro.llm.enabled=false}). */
