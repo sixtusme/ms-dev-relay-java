@@ -70,8 +70,14 @@ maestro:
   # Anthropic usa otro formato: cuando haga falta, se añade otra implementación de LlmClient.
   llm:
     # Interruptor: apagado, Sixai solo comenta (maestro.responder.ack-comment) sin llamar al modelo.
-    enabled: ${MAESTRO_LLM_ENABLED:false}
-    provider: ${MAESTRO_LLM_PROVIDER:openai-compatible}   # openai-compatible | anthropic (futuro)
+    enabled: ${MAESTRO_LLM_ENABLED:true}
+    provider: ${MAESTRO_LLM_PROVIDER:openai-compatible}   # openai-compatible | anthropic
+    # Solo con provider=anthropic. Los modelos por rol (models.*) pasan a ser ids de Claude, p. ej.
+    # claude-opus-5-5; el de embedding sigue en base-url (Ollama): Anthropic no tiene embeddings.
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      workspace-id: ${ANTHROPIC_WORKSPACE_ID:}   # solo con claves de usuario (sk-ant-usr-...)
+      effort: ${MAESTRO_LLM_ANTHROPIC_EFFORT:high}   # low | medium | high | xhigh | max
     base-url: ${MAESTRO_LLM_BASE_URL:http://localhost:11434/v1}
     model: "${MAESTRO_LLM_MODEL:qwen3:8b}"
     # Modelo por rol lógico, servido desde Ollama local. Limitado a ~8B por la RAM de esta
@@ -178,6 +184,10 @@ maestro:
           - name: ms-dev-relay-lib-java
             role: contrato/spec OpenAPI de Sixai
             keywords: [spec, contrato, dto, openapi, yaml]
+          # El panel /sixai vive en el front de docs, no en un front propio de Sixai.
+          - name: colorbaby-docs-react
+            role: frontend del panel /sixai (vista de Sixai dentro del portal de docs)
+            keywords: [front, frontend, ui, pantalla, vista, react, panel, componente]
       - keywords: [docs, documentación, documentacion, wiki]
         repos:
           - name: colorbaby-docs-java

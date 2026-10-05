@@ -30,8 +30,15 @@ public class LlmProperties {
    */
   private boolean enabled = false;
 
-  /** Familia de API. De momento solo {@code openai-compatible} (Ollama, OpenAI, LM Studio…). */
+  /**
+   * Familia de API: {@code openai-compatible} (Ollama, OpenAI, LM Studio…) o {@code anthropic}
+   * (Claude). Con {@code anthropic}, los embeddings siguen saliendo de {@code base-url}: Anthropic no
+   * tiene API de embeddings.
+   */
   private String provider = "openai-compatible";
+
+  /** Ajustes que solo usa el proveedor {@code anthropic}. */
+  private Anthropic anthropic = new Anthropic();
 
   /** URL base del endpoint compatible con OpenAI, sin la barra final. */
   private String baseUrl = "http://localhost:11434/v1";
@@ -106,6 +113,27 @@ public class LlmProperties {
   /** Segundos que el cortocircuito permanece abierto antes de volver a probar. */
   @Positive
   private int circuitOpenSeconds = 60;
+
+  /** Ajustes del proveedor {@code anthropic} ({@code maestro.llm.anthropic}). */
+  @Getter
+  @Setter
+  public static class Anthropic {
+
+    /** Clave del API de Anthropic. Aparte de {@code api-key}, que es la del endpoint de embeddings. */
+    private String apiKey = "";
+
+    /**
+     * Workspace de Anthropic ({@code wrkspc_…}). Solo hace falta con claves de usuario
+     * ({@code sk-ant-usr-…}), que no van ligadas a un workspace; vacío con una clave normal.
+     */
+    private String workspaceId = "";
+
+    /**
+     * Esfuerzo de razonamiento: {@code low}, {@code medium}, {@code high}, {@code xhigh} o
+     * {@code max}. Más esfuerzo = mejor resultado en código, más tokens y más latencia.
+     */
+    private String effort = "high";
+  }
 
   /**
    * Timeout de lectura para un rol: el suyo si está configurado, o el general.

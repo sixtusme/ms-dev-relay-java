@@ -14,6 +14,7 @@ import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskLifecycle;
 import es.colorbaby.microservices.dev.relay.control.lifecycle.TaskPhase;
 import es.colorbaby.microservices.dev.relay.delivery.pullrequest.PullRequestService;
 import es.colorbaby.microservices.dev.relay.intake.IssueEligibleEvent;
+import es.colorbaby.microservices.dev.relay.intake.ProcessedIssuesTracker;
 import es.colorbaby.microservices.dev.relay.jira.client.JiraClient;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraAdf;
 import es.colorbaby.microservices.dev.relay.jira.util.JiraTextExtractor;
@@ -64,6 +65,7 @@ public class IssueResponder {
   private final PullRequestService pullRequestService;
   private final TaskRecorder taskRecorder;
   private final TaskLifecycle taskLifecycle;
+  private final ProcessedIssuesTracker processedIssuesTracker;
 
   @EventListener
   public void onIssueEligible(final IssueEligibleEvent event) {
@@ -72,11 +74,14 @@ public class IssueResponder {
     // cogió la tarea, quién la mandó y cuándo.
     taskRecorder.start(issueKey, event.triggeringCommentAuthorAccountId(),
         event.triggeringCommentAuthorName(), String.valueOf(event.source()));
+    // Hasta publicar la respuesta, un fallo se puede reintentar sin duplicar nada en Jira.
+    boolean replied = false;
     try {
       String replyText = buildReplyText(issueKey);
       if (replyText != null && !replyText.isBlank()) {
         log.info("Respuesta de Sixai para {}:\n{}", issueKey, replyText);
         publishReply(issueKey, replyText, event);
+        replied = true;
         log.info("Comentario publicado en {}", issueKey);
       }
       moveToInProgress(issueKey);
@@ -90,7 +95,18 @@ public class IssueResponder {
     } catch (RuntimeException e) {
       // No se relanza: un fallo respondiendo no debe tumbar el ciclo de detección.
       log.error("No se pudo responder la issue {}", issueKey, e);
-      reportError(issueKey, e);
+      if (replied) {
+        reportError(issueKey, e);
+      } else {
+        // Fallo antes de responder (sin crédito, modelo caído…): se reintenta con espera
+        // creciente, y el aviso en la tarea solo se publica la primera vez para no llenarla.
+        int failures = processedIssuesTracker.retryLater(issueKey);
+        if (failures == 1) {
+          reportError(issueKey, e);
+        } else {
+          log.warn("Fallo {} seguido en {}; se reintentará más tarde", failures, issueKey);
+        }
+      }
       taskLifecycle.accept(issueKey, PhaseOutcome.of(TaskPhase.INTAKE, Recommendation.FAIL,
           Evidence.of(EvidenceKind.REASON, rootMessage(e), EvidenceSource.SYSTEM)));
     }

@@ -3,6 +3,7 @@ package es.colorbaby.microservices.dev.relay.config;
 import es.colorbaby.microservices.dev.relay.activity.LlmCallRepository;
 import es.colorbaby.microservices.dev.relay.activity.TaskRecorder;
 import es.colorbaby.microservices.dev.relay.guardrail.SecretRedactor;
+import es.colorbaby.microservices.dev.relay.ai.llm.AnthropicLlmClient;
 import es.colorbaby.microservices.dev.relay.ai.llm.GuardedLlmClient;
 import es.colorbaby.microservices.dev.relay.ai.llm.LlmClient;
 import es.colorbaby.microservices.dev.relay.ai.llm.OpenAiCompatibleLlmClient;
@@ -22,8 +23,8 @@ import org.springframework.context.annotation.Configuration;
 public class LlmConfig {
 
   /**
-   * Cliente LLM. Hoy solo hay implementación compatible con OpenAI (Ollama, OpenAI…). Cuando se
-   * añada otro proveedor con otro formato, se elige aquí según {@code properties.getProvider()}.
+   * Cliente LLM, según {@code properties.getProvider()}: compatible con OpenAI (Ollama, OpenAI…) o
+   * Anthropic (Claude).
    *
    * <p>Los RestTemplate viven DENTRO del cliente y NO se exponen como bean: si lo fueran, el
    * {@code jiraRestTemplate} de la lib (que es {@code @ConditionalOnMissingBean}) no se crearía y
@@ -33,16 +34,28 @@ public class LlmConfig {
   public LlmClient llmClient(final LlmProperties properties, final LlmCallRepository llmCalls,
       final TaskRecorder taskRecorder, final SecretRedactor redactor) {
     // Tres decoradores, cada uno con un trabajo, y en este orden a propósito (de dentro a fuera):
-    //  1. OpenAiCompatible: la llamada real (con el timeout que corresponda al rol).
+    //  1. El proveedor (OpenAiCompatible o Anthropic): la llamada real, con el timeout del rol.
     //  2. Resilient: corta si el modelo no responde, para no comerse el timeout en cada llamada
     //     y bloquear los hilos de procesamiento.
     //  3. Recording: mide la llamada, incluidas las que corta el cortocircuito.
     //  4. Guarded (el más externo): redacta secretos antes de que salgan y en lo que vuelve.
     // Así ningún prompt nuevo puede olvidarse de ser medido, protegido ni filtrado.
+    final LlmClient openAiCompatible = new OpenAiCompatibleLlmClient(properties);
+    final LlmClient provider;
+    if ("anthropic".equals(properties.getProvider())) {
+      if (properties.isEnabled() && properties.getAnthropic().getApiKey().isBlank()) {
+        throw new IllegalStateException(
+            "maestro.llm.provider=anthropic sin maestro.llm.anthropic.api-key (ANTHROPIC_API_KEY)");
+      }
+      // Los embeddings siguen en el endpoint compatible con OpenAI: Anthropic no los ofrece.
+      provider = new AnthropicLlmClient(properties, openAiCompatible);
+    } else {
+      provider = openAiCompatible;
+    }
     return new GuardedLlmClient(
         new RecordingLlmClient(
             new ResilientLlmClient(
-                new OpenAiCompatibleLlmClient(properties),
+                provider,
                 properties.getCircuitFailureRateThreshold(),
                 properties.getCircuitMinimumCalls(),
                 properties.getCircuitOpenSeconds()),
